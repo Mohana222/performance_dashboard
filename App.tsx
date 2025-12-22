@@ -75,6 +75,7 @@ const App: React.FC = () => {
     localStorage.setItem('selected_sheet_ids', JSON.stringify(selectedSheetIds));
   }, [selectedSheetIds]);
 
+  // Effect to fetch and filter available sheets
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
       const fetchAllSheets = async () => {
@@ -86,12 +87,21 @@ const App: React.FC = () => {
           if (project) {
             const list = await getSheetList(project.url);
             list.forEach(sheetName => {
-              allSheets.push({
-                id: `${pid}|${sheetName}`,
-                label: `[${project.name}] ${sheetName}`,
-                projectId: pid,
-                sheetName: sheetName
-              });
+              // Apply Filtering Logic: 
+              // If project is 'hourly', only show sheets containing 'login' AND exclude 'credential'
+              const isHourly = project.category === 'hourly';
+              const sNameLower = sheetName.toLowerCase();
+              const containsLogin = sNameLower.includes('login');
+              const containsCredential = sNameLower.includes('credential');
+              
+              if (!isHourly || (containsLogin && !containsCredential)) {
+                allSheets.push({
+                  id: `${pid}|${sheetName}`,
+                  label: `[${project.name}] ${sheetName}`,
+                  projectId: pid,
+                  sheetName: sheetName
+                });
+              }
             });
           }
         }));
@@ -107,6 +117,17 @@ const App: React.FC = () => {
       }
     }
   }, [isAuthenticated, combinedSelectedProjectIds, projects]);
+
+  // Cleanup: Automatically deselect sheets that are no longer available due to filtering
+  useEffect(() => {
+    if (availableSheets.length > 0) {
+      const availableIds = new Set(availableSheets.map(s => s.id));
+      const validSelectedIds = selectedSheetIds.filter(id => availableIds.has(id));
+      if (validSelectedIds.length !== selectedSheetIds.length) {
+        setSelectedSheetIds(validSelectedIds);
+      }
+    }
+  }, [availableSheets]);
 
   const formatDateString = (val: any): string => {
     if (!val) return '';
@@ -509,7 +530,7 @@ const App: React.FC = () => {
              </div>
              <div className="space-y-2">
                 <h3 className="text-white font-bold text-xl">Connecting Hub</h3>
-                <p className="text-slate-500 max-sm">Aggregating records from your selected cloud spreadsheets. Please stand by.</p>
+                <p className="text-slate-500 max-w-sm">Aggregating records from your selected cloud spreadsheets. Please stand by.</p>
              </div>
           </div>
         ) : (
