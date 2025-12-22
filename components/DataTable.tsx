@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 
 interface DataTableProps {
@@ -15,7 +14,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({});
 
   // Determine which columns are filterable
-  // If filterColumns is provided, use those. Otherwise, default to first 3 headers (for Raw Data).
   const actualFilterColumns = useMemo(() => {
     return filterColumns || headers.slice(0, 3);
   }, [filterColumns, headers]);
@@ -24,7 +22,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   const filterableData = useMemo(() => {
     const mapping: Record<string, string[]> = {};
     actualFilterColumns.forEach(col => {
-      // Added type assertion to Array.from result to resolve 'unknown[]' type error
       const values: string[] = (Array.from(new Set(data.map(row => String(row[col] || '')))) as string[])
         .filter(v => v !== '' && v !== 'undefined' && v !== 'null')
         .sort();
@@ -50,13 +47,10 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
 
   const filteredData = useMemo(() => {
     return data.filter(row => {
-      // Global Search (Name or ID)
       const matchesSearch = searchTerm === '' || headers.some(header => 
         String(row[header] || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
 
-      // Multi-select Column Filters
-      // Added type assertion to Object.entries to resolve 'unknown' property errors
       const matchesFilters = (Object.entries(selectedFilters) as [string, string[]][]).every(([col, selectedValues]) => {
         if (selectedValues.length === 0) return true;
         return selectedValues.includes(String(row[col] || ''));
@@ -71,7 +65,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     if (filteredData.length === 0) return;
     
     const csvRows = [];
-    // Clean headers for CSV
     csvRows.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','));
     
     filteredData.forEach(row => {
@@ -95,23 +88,55 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   };
 
   const totals = useMemo(() => {
-    const results: Record<string, { value: number; label?: string }> = {};
+    const results: Record<string, { value: any; label?: string; type?: 'numeric' | 'attendance' }> = {};
     headers.forEach(header => {
       const normHeader = header.toLowerCase().replace(/[\s\-_]+/g, "");
+      
+      // Attendance Detection
+      const columnValues = filteredData.map(row => String(row[header] || '').toUpperCase());
+      const isAttendanceCol = columnValues.some(v => v === 'PRESENT' || v === 'ABSENT' || v === 'NIL');
+      
+      if (isAttendanceCol) {
+        const presentCount = columnValues.filter(v => v === 'PRESENT').length;
+        const absentCount = columnValues.filter(v => v === 'ABSENT').length;
+        if (presentCount > 0 || absentCount > 0) {
+          results[header] = { 
+            value: { present: presentCount, absent: absentCount }, 
+            label: 'Attendance',
+            type: 'attendance'
+          };
+          return;
+        }
+      }
+
       if (normHeader.includes("videoid")) return;
       if (normHeader.includes("frameid")) {
         const count = filteredData.filter(row => row[header] !== null && row[header] !== undefined && String(row[header]).trim() !== "").length;
-        results[header] = { value: count, label: 'Count' };
+        results[header] = { value: count, label: 'Count', type: 'numeric' };
         return;
       }
+
       const sample = filteredData.find(r => r[header] !== null && r[header] !== undefined && r[header] !== "");
       if (sample && !isNaN(Number(sample[header])) && typeof sample[header] !== 'boolean') {
         const sum = filteredData.reduce((acc, row) => acc + (Number(row[header]) || 0), 0);
-        results[header] = { value: sum, label: 'Sum' };
+        results[header] = { value: sum, label: 'Sum', type: 'numeric' };
       }
     });
     return results;
   }, [filteredData, headers]);
+
+  // Aggregate attendance for the "Grand Totals" label's neighbor cell
+  const aggregateAttendance = useMemo(() => {
+    let totalPresent = 0;
+    let totalAbsent = 0;
+    Object.values(totals).forEach(t => {
+      if (t.type === 'attendance') {
+        totalPresent += t.value.present;
+        totalAbsent += t.value.absent;
+      }
+    });
+    return { present: totalPresent, absent: totalAbsent };
+  }, [totals]);
 
   const activeFilterCount = Object.values(selectedFilters).flat().length;
 
@@ -170,7 +195,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
         {/* Dynamic Filter Panel */}
         {showFilters && (
           <div className="mt-8 pt-8 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-top-4 duration-300">
-            {/* Added type assertion to Object.entries to resolve 'unknown' property errors */}
             {(Object.entries(filterableData) as [string, string[]][]).map(([col, values]) => (
               <div key={col} className="flex flex-col space-y-3">
                 <div className="flex justify-between items-center px-1">
@@ -185,7 +209,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                   )}
                 </div>
                 <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-2 h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1">
-                  {/* Ensure 'values' is recognized as string[] to access length and map */}
                   {values.length > 0 ? values.map(val => (
                     <label 
                       key={val} 
@@ -239,7 +262,15 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                 <tr key={idx} className="hover:bg-violet-500/5 transition-all group border-l-4 border-l-transparent hover:border-l-violet-500">
                   {headers.map(header => (
                     <td key={header} className="px-8 py-4 text-sm text-slate-300 whitespace-nowrap group-hover:text-white transition-colors">
-                      {row[header] ?? <span className="text-slate-600 font-mono">-</span>}
+                      {row[header] === 'Present' ? (
+                        <span className="text-emerald-400 font-bold">{row[header]}</span>
+                      ) : row[header] === 'Absent' ? (
+                        <span className="text-rose-400 font-bold">{row[header]}</span>
+                      ) : row[header] === 'NIL' ? (
+                        <span className="text-slate-600 font-medium">{row[header]}</span>
+                      ) : (
+                        row[header] ?? <span className="text-slate-600 font-mono">-</span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -255,19 +286,49 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
               </tr>
             )}
           </tbody>
-          {filteredData.length > 0 && Object.keys(totals).length > 0 && (
+          {filteredData.length > 0 && (Object.keys(totals).length > 0 || aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) && (
             <tfoot className="sticky bottom-0 bg-slate-800 z-10 shadow-[0_-10px_20px_rgba(0,0,0,0.3)] border-t-2 border-slate-700">
               <tr className="bg-slate-800/95 backdrop-blur-md">
                 {headers.map((header, idx) => (
                   <td key={`foot-${idx}`} className="px-8 py-5 text-sm font-black text-white whitespace-nowrap">
-                    {idx === 0 ? 'GRAND TOTALS' : (totals[header] !== undefined ? (
+                    {idx === 0 ? (
+                      <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-pink-400">GRAND TOTALS</span>
+                    ) : idx === 1 ? (
+                      /* Next to Grand Totals (NAME column): Show Aggregate Attendance across all sheets if applicable */
+                      (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">Aggregate (All Sheets)</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">PRESENT</span>
+                            <span className="text-emerald-400 tabular-nums">{aggregateAttendance.present}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">ABSENT</span>
+                            <span className="text-rose-400 tabular-nums">{aggregateAttendance.absent}</span>
+                          </div>
+                        </div>
+                      ) : null
+                    ) : (totals[header] !== undefined ? (
                       <div className="flex flex-col">
-                        {totals[header].label && (
+                        {totals[header].label && totals[header].type !== 'attendance' && (
                           <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">{totals[header].label}</span>
                         )}
-                        <span className="text-violet-400 tabular-nums">
-                          {totals[header].value.toLocaleString()}
-                        </span>
+                        {totals[header].type === 'attendance' ? (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">PRESENT</span>
+                              <span className="text-emerald-400 tabular-nums">{totals[header].value.present}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">ABSENT</span>
+                              <span className="text-rose-400 tabular-nums">{totals[header].value.absent}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-violet-400 tabular-nums">
+                            {totals[header].value.toLocaleString()}
+                          </span>
+                        )}
                       </div>
                     ) : null)}
                   </td>

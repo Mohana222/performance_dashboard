@@ -21,14 +21,11 @@ const DEFAULT_PROJECTS: Project[] = [
 const parseTimeToMinutes = (val: any): number | null => {
   if (val === null || val === undefined) return null;
   
-  // Handle native Date objects
   if (val instanceof Date) {
     return val.getHours() * 60 + val.getMinutes();
   }
 
-  // Handle Google Sheets/Excel numeric time (e.g., 0.375 = 9:00 AM)
   if (typeof val === 'number') {
-    // Standard time values in sheets are between 0 and 1
     if (val <= 0 || val >= 1) return null; 
     return Math.round(val * 24 * 60);
   }
@@ -36,7 +33,6 @@ const parseTimeToMinutes = (val: any): number | null => {
   const str = String(val).trim();
   if (!str || str.toLowerCase() === 'n/a' || str === '0' || str === '00:00:00') return null;
 
-  // Handle common time strings like "9:05", "09:10 AM", "2:00 PM", "14:30"
   const timeRegex = /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i;
   const match = str.match(timeRegex);
 
@@ -52,6 +48,26 @@ const parseTimeToMinutes = (val: any): number | null => {
   }
 
   return null;
+};
+
+/**
+ * Parses sheet names like "1ST SEP LOGIN" or "25TH SEP LOGIN" into a sortable number.
+ */
+const parseSheetDate = (sheetName: string): number => {
+  const cleanName = sheetName.toUpperCase();
+  const match = cleanName.match(/(\d+)(?:ST|ND|RD|TH)?\s+([A-Z]{3})/);
+  if (!match) return 0;
+
+  const day = parseInt(match[1], 10);
+  const monthStr = match[2];
+  
+  const months: Record<string, number> = {
+    'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+    'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+  };
+  
+  const month = months[monthStr] ?? 0;
+  return new Date(2024, month, day).getTime();
 };
 
 const StarField: React.FC = () => {
@@ -322,91 +338,115 @@ const App: React.FC = () => {
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
     const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
     
-    // Pivot Map: { [EmployeeName]: { [DateLabel]: Status } }
-    const attendancePivot: Record<string, Record<string, string>> = {};
-    const uniqueDateLabels = new Set<string>();
+    const employeeData: Record<string, { sno: string, name: string }> = {};
+    const attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {};
+    const uniqueSheetNames = new Set<string>();
 
     rawData.forEach(row => {
-      const ann = String(row[kAnn || ''] || '').trim();
-      const user = String(row[kUser || ''] || '').trim();
-      const frameId = String(row[kFrame || ''] || '').trim();
-      const objCount = parseFloat(String(row[kObj || ''] || '0')) || 0;
-      const qcName = String(row[kQC || ''] || '').trim();
-      const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
       const category = row['Project Category'];
       const sheetSource = String(row['Sheet Source'] || '');
 
-      // Standard Summary Calculations
-      if (ann) {
-        if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
-        if (frameId) annotatorMap[ann].frameSet.add(frameId);
-        annotatorMap[ann].objects += objCount;
+      if (category === 'production') {
+        const ann = String(row[kAnn || ''] || '').trim();
+        const user = String(row[kUser || ''] || '').trim();
+        const frameId = String(row[kFrame || ''] || '').trim();
+        const objCount = parseFloat(String(row[kObj || ''] || '0')) || 0;
+        const qcName = String(row[kQC || ''] || '').trim();
+        const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
 
-        if (qcName) {
-          if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 };
-          qcAnnMap[ann].objects += objCount;
-          qcAnnMap[ann].errors += errCount;
+        if (ann) {
+          if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
+          if (frameId) annotatorMap[ann].frameSet.add(frameId);
+          annotatorMap[ann].objects += objCount;
+          if (qcName) {
+            if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 };
+            qcAnnMap[ann].objects += objCount;
+            qcAnnMap[ann].errors += errCount;
+          }
         }
-
-        /**
-         * ATTENDANCE PROCESSING
-         * Logic: Detect sheets ending in "login", extract date part.
-         * Mapping: Column B (index 1) = Employee Name, Column F (index 5) = Login Time.
-         */
-        if (category === 'hourly' && sheetSource.toLowerCase().endsWith('login')) {
-          const dateLabel = sheetSource.replace(/\s+login$/i, '').trim();
-          uniqueDateLabels.add(dateLabel);
-
-          // Get row keys (headers or indexes)
-          const rowKeys = Object.keys(row);
-          // Column B is index 1, Column F is index 5
-          const employeeName = String(row[rowKeys[1]] || '').trim();
-          const loginTimeValue = row[rowKeys[5]];
-
-          if (employeeName && employeeName !== "undefined" && employeeName !== "") {
-            const parsedMinutes = parseTimeToMinutes(loginTimeValue);
-            const status = parsedMinutes !== null ? 'Present' : 'Absent';
-
-            if (!attendancePivot[employeeName]) {
-              attendancePivot[employeeName] = {};
-            }
-
-            // Deduplication logic: If multiple entries for one person in one sheet,
-            // 'Present' status takes precedence over 'Absent'.
-            const currentStatus = attendancePivot[employeeName][dateLabel];
-            if (status === 'Present' || !currentStatus) {
-              attendancePivot[employeeName][dateLabel] = status;
-            }
+        if (user) {
+          if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
+          if (frameId) userMap[user].frameSet.add(frameId);
+          userMap[user].objects += objCount;
+          if (qcName) {
+            if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 };
+            qcUserMap[user].objects += objCount;
+            qcUserMap[user].errors += errCount;
           }
         }
       }
 
-      if (user) {
-        if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
-        if (frameId) userMap[user].frameSet.add(frameId);
-        userMap[user].objects += objCount;
+      if (category === 'hourly' && sheetSource.toLowerCase().endsWith('login')) {
+        uniqueSheetNames.add(sheetSource);
+        const rowKeys = Object.keys(row);
+        
+        // Use findKey for more robust targeting than hardcoded indices
+        const sKey = findKey(rowKeys, "SNO") || rowKeys[0];
+        const nKey = findKey(rowKeys, "NAME") || rowKeys[1];
+        const lKey = findKey(rowKeys, "Login Time") || rowKeys[5];
 
-        if (qcName) {
-          if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 };
-          qcUserMap[user].objects += objCount;
-          qcUserMap[user].errors += errCount;
+        let snoVal = String(row[sKey] || '').trim();
+        const employeeName = String(row[nKey] || '').trim();
+        const loginTimeVal = row[lKey];
+
+        // Sanitize SNO: If it contains ':' it's likely a leaked timestamp from a misaligned sheet
+        if (snoVal.includes(':')) snoVal = "";
+        
+        if (employeeName && employeeName !== "undefined" && employeeName !== "") {
+          const loginMinutes = parseTimeToMinutes(loginTimeVal);
+          const status = loginMinutes !== null ? 'Present' : 'Absent';
+          
+          if (!employeeData[employeeName]) {
+            employeeData[employeeName] = { sno: snoVal, name: employeeName };
+          }
+          if (!attendanceRecords[employeeName]) {
+            attendanceRecords[employeeName] = {};
+          }
+          
+          const currentStatus = attendanceRecords[employeeName][sheetSource];
+          if (status === 'Present' || !currentStatus) {
+            attendanceRecords[employeeName][sheetSource] = status;
+          }
+          if (!employeeData[employeeName].sno && snoVal) {
+            employeeData[employeeName].sno = snoVal;
+          }
         }
       }
     });
 
-    // Sort dates logically (1st, 2nd, 3rd...)
-    const sortedDates = Array.from(uniqueDateLabels).sort((a, b) => {
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    const sortedSheetHeaders = Array.from(uniqueSheetNames).sort((a, b) => {
+      const timeA = parseSheetDate(a);
+      const timeB = parseSheetDate(b);
+      if (timeA !== timeB) return timeA - timeB;
+      return a.localeCompare(b, undefined, { numeric: true });
     });
 
-    // Flatten Pivot data into array of objects for DataTable
-    const attendanceFlat = Object.entries(attendancePivot).map(([name, dates]) => {
-      const rowData: Record<string, string> = { Employee: name };
-      sortedDates.forEach(d => {
-        rowData[d] = dates[d] || 'Absent';
+    // Pivot data and prepare for sorting
+    const attendanceFlatRaw = Object.keys(employeeData).map(name => {
+      const meta = employeeData[name];
+      const row: Record<string, string> = { _originalSno: meta.sno, NAME: meta.name };
+      sortedSheetHeaders.forEach(sheet => {
+        row[sheet] = attendanceRecords[name][sheet] || 'NIL';
       });
-      return rowData;
-    }).sort((a, b) => a.Employee.localeCompare(b.Employee));
+      return row;
+    });
+
+    // Sort by original SNO if possible, otherwise by name
+    const sortedFlat = attendanceFlatRaw.sort((a, b) => {
+      const snoA = parseInt(a._originalSno, 10);
+      const snoB = parseInt(b._originalSno, 10);
+      if (!isNaN(snoA) && !isNaN(snoB)) return snoA - snoB;
+      return a.NAME.localeCompare(b.NAME);
+    });
+
+    // Map to final format and re-index SNO for perfectly ascending numbers
+    const attendanceFlat = sortedFlat.map((row, idx) => {
+      const { _originalSno, ...rest } = row;
+      return {
+        SNO: (idx + 1).toString(),
+        ...rest
+      };
+    });
 
     return {
       annotators: Object.entries(annotatorMap).map(([name, data]) => ({
@@ -430,18 +470,21 @@ const App: React.FC = () => {
         errorCount: data.errors
       })).sort((a,b) => b.objectCount - a.objectCount),
       attendance: attendanceFlat,
-      attendanceHeaders: ['Employee', ...sortedDates]
+      attendanceHeaders: ['SNO', 'NAME', ...sortedSheetHeaders]
     };
   }, [rawData]);
 
   const metrics = useMemo(() => {
+    const prodData = rawData.filter(r => r['Project Category'] === 'production');
     const globalFrames = new Set<string>();
-    const keys = rawData.length > 0 ? Object.keys(rawData[0]) : [];
+    const keys = prodData.length > 0 ? Object.keys(prodData[0]) : [];
     const kFrame = findKey(keys, "Frame ID");
-    rawData.forEach(r => {
+    
+    prodData.forEach(r => {
       const f = String(r[kFrame || ''] || '').trim();
       if (f) globalFrames.add(f);
     });
+
     const totalObjects = processedSummaries.annotators.reduce((acc, cur) => acc + cur.objectCount, 0);
     const qcObjectsCount = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.objectCount, 0);
     const totalErrors = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.errorCount, 0);
@@ -541,7 +584,7 @@ const App: React.FC = () => {
             <p className="text-slate-500 text-sm mt-1">Synchronized view of <span className="text-violet-400 font-bold">{selectedSheetIds.length}</span> datasets from <span className="text-violet-400 font-bold">{combinedSelectedProjectIds.length}</span> sources.</p>
           </div>
           <div className="flex items-center gap-4">
-             {(isDataLoading || isLoading) && <div className="flex items-center gap-2 text-xs text-violet-400 font-bold animate-pulse bg-violet-400/5 px-4 py-2 rounded-xl border border-violet-400/20 shadow-lg">Data Refreshing...</div>}
+             {(isDataLoading || isLoading) && <div className="flex items-center gap-2 text-xs text-violet-400 font-bold animate-pulse bg-violet-400/5 px-4 py-2 rounded-xl border border-violet-400/20 shadow-lg">Refreshing Data...</div>}
              <button onClick={handleLogout} className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl shadow-xl transition-all hover:bg-red-500/20 hover:border-red-500/50"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
           </div>
         </header>
@@ -549,14 +592,14 @@ const App: React.FC = () => {
         {(isDataLoading || isLoading) && rawData.length === 0 ? (
           <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
              <div className="w-20 h-20 border-8 border-violet-600/10 border-t-violet-600 rounded-full animate-spin"></div>
-             <h3 className="text-white font-bold text-xl">Connecting Hub...</h3>
+             <h3 className="text-white font-bold text-xl">Connecting Connection Hub...</h3>
           </div>
         ) : (
           <div className="space-y-10">
             {combinedSelectedProjectIds.length === 0 || selectedSheetIds.length === 0 ? (
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>
-                <h3 className="text-slate-400 font-bold text-lg">No Active Sources</h3>
+                <h3 className="text-slate-400 font-bold text-lg">No Active Data Sources</h3>
               </div>
             ) : (
               <>
@@ -564,28 +607,28 @@ const App: React.FC = () => {
                   <>
                     <SummaryCards metrics={metrics} />
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                      <div className="lg:col-span-3"><OverallPieChart data={pieData} title="Performance Quotient: Top Annotators" /></div>
-                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcUsers} title="QC Performance Analysis" /></div>
+                      <div className="lg:col-span-3"><OverallPieChart data={pieData} title="Annotator Performance: Objects" /></div>
+                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcUsers} title="Top QC Quality Rates" /></div>
                     </div>
                   </>
                 )}
-                {currentView === 'raw' && <DataTable title="Unified Raw Dataset" headers={rawHeaders} data={rawData} filterColumns={[kTask, kLabelSet, kAnnotatorName, kUserName, kDate, 'Project Category']} />}
-                {currentView === 'annotator' && <DataTable title="Annotator Performance" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
-                {currentView === 'username' && <DataTable title="UserName Analysis" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
-                {currentView === 'qc-user' && <DataTable title="QC Assurance: UserName" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
-                {currentView === 'qc-annotator' && <DataTable title="QC Quality: Annotator" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcAnn} filterColumns={['name']} />}
+                {currentView === 'raw' && <DataTable title="Consolidated Raw Data" headers={rawHeaders} data={rawData} filterColumns={[kTask, kLabelSet, kAnnotatorName, kUserName, kDate, 'Project Category']} />}
+                {currentView === 'annotator' && <DataTable title="Annotator Output Summary" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
+                {currentView === 'username' && <DataTable title="Username Output Summary" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
+                {currentView === 'qc-user' && <DataTable title="Quality Assurance by Username" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
+                {currentView === 'qc-annotator' && <DataTable title="Quality Assurance by Annotator" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcAnn} filterColumns={['name']} />}
                 {currentView === 'attendance' && (
                   processedSummaries.attendance.length > 0 ? (
                     <DataTable 
-                      title="Attendance Summary: Grid View" 
+                      title="Attendance Summary: Monthly Pivot Grid" 
                       headers={processedSummaries.attendanceHeaders} 
                       data={processedSummaries.attendance} 
-                      filterColumns={['Employee']}
+                      filterColumns={['NAME', 'SNO']}
                     />
                   ) : (
                     <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
-                      <div className="text-6xl grayscale opacity-20">⏰</div>
-                      <h3 className="text-slate-400 font-bold text-lg">No "Login" Sheets Detected in Hourly Projects</h3>
+                      <div className="text-6xl grayscale opacity-20">📅</div>
+                      <h3 className="text-slate-400 font-bold text-lg">No "Login" sheets found in Hourly projects</h3>
                     </div>
                   )
                 )}
@@ -596,9 +639,9 @@ const App: React.FC = () => {
       </main>
 
       {showProjectManager && <ProjectManager projects={projects} activeProjectId={combinedSelectedProjectIds[0] || ''} onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />}
-      {enlargedModal === 'projects-prod' && <SelectionModal title="Production Sources" options={prodProjects.map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={prodProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
-      {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Sources" options={hourlyProjects.map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={hourlyProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
-      {enlargedModal === 'sheets' && <SelectionModal title="Data Sheets" options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} onClose={() => setEnlargedModal(null)} />}
+      {enlargedModal === 'projects-prod' && <SelectionModal title="Production Project Selection" options={prodProjects.map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={prodProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
+      {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Project Selection" options={hourlyProjects.map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={hourlyProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
+      {enlargedModal === 'sheets' && <SelectionModal title="Data Sheet Selection" options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} onClose={() => setEnlargedModal(null)} />}
     </div>
   );
 };
