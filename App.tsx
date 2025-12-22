@@ -14,6 +14,50 @@ const DEFAULT_PROJECTS: Project[] = [
   { id: '1', name: 'Default Production', url: API_URL, color: COLORS.primary, category: 'production' }
 ];
 
+// Helper to generate stars for the Milky Way effect
+const StarField: React.FC = () => {
+  const stars = useMemo(() => {
+    return Array.from({ length: 150 }).map((_, i) => ({
+      id: i,
+      size: Math.random() * 2 + 1,
+      top: `${Math.random() * 100}%`,
+      left: `${Math.random() * 100}%`,
+      delay: `${Math.random() * 5}s`,
+      duration: `${3 + Math.random() * 4}s`,
+      opacity: Math.random() * 0.7 + 0.3,
+      color: i % 10 === 0 ? '#06B6D4' : i % 15 === 0 ? '#8B5CF6' : 'white'
+    }));
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+      {stars.map((star) => (
+        <div
+          key={star.id}
+          className="star animate-twinkle"
+          style={{
+            width: `${star.size}px`,
+            height: `${star.size}px`,
+            top: star.top,
+            left: star.left,
+            backgroundColor: star.color,
+            boxShadow: `0 0 ${star.size * 2}px ${star.color}`,
+            animationDelay: star.delay,
+            animationDuration: star.duration,
+            opacity: star.opacity
+          }}
+        />
+      ))}
+      {/* Nebula Clouds */}
+      <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[120%] opacity-40 mix-blend-screen">
+        <div className="absolute top-[20%] left-[10%] w-[800px] h-[800px] bg-violet-900/20 rounded-full blur-[160px] animate-drift"></div>
+        <div className="absolute bottom-[20%] right-[10%] w-[900px] h-[900px] bg-indigo-900/20 rounded-full blur-[180px] animate-drift" style={{ animationDelay: '-7s' }}></div>
+        <div className="absolute top-[40%] left-[30%] w-[700px] h-[700px] bg-cyan-900/10 rounded-full blur-[140px] animate-drift" style={{ animationDelay: '-12s' }}></div>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('ok'));
   const [username, setUsername] = useState('');
@@ -75,7 +119,6 @@ const App: React.FC = () => {
     localStorage.setItem('selected_sheet_ids', JSON.stringify(selectedSheetIds));
   }, [selectedSheetIds]);
 
-  // Effect to fetch and filter available sheets
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
       const fetchAllSheets = async () => {
@@ -87,8 +130,6 @@ const App: React.FC = () => {
           if (project) {
             const list = await getSheetList(project.url);
             list.forEach(sheetName => {
-              // Apply Filtering Logic: 
-              // If project is 'hourly', only show sheets containing 'login' AND exclude 'credential'
               const isHourly = project.category === 'hourly';
               const sNameLower = sheetName.toLowerCase();
               const containsLogin = sNameLower.includes('login');
@@ -118,7 +159,6 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated, combinedSelectedProjectIds, projects]);
 
-  // Cleanup: Automatically deselect sheets that are no longer available due to filtering
   useEffect(() => {
     if (availableSheets.length > 0) {
       const availableIds = new Set(availableSheets.map(s => s.id));
@@ -352,44 +392,72 @@ const App: React.FC = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#0a0f24] border border-[#1e293b] p-12 rounded-[2rem] shadow-2xl relative">
-          <div className="relative z-10 text-center mb-10">
-            <h1 className="text-5xl font-black text-white tracking-tighter">
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4 relative overflow-hidden">
+        <StarField />
+
+        {/* Login Container */}
+        <div className="max-w-md w-full bg-slate-900/50 backdrop-blur-[32px] border border-white/10 p-10 md:p-14 rounded-[3.5rem] shadow-2xl relative z-10 animate-fade-up login-glow">
+          <div className="relative z-10 text-center mb-12">
+             <div className="inline-block px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-black tracking-widest uppercase mb-4">
+               Secure Network Portal
+             </div>
+            <h1 className="text-5xl md:text-6xl font-black tracking-tighter shimmer-text py-2">
               DesiCrew
             </h1>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <input
-                type="text"
-                placeholder="Username"
-                required
-                className="w-full bg-[#111827] border border-[#1e293b] text-white px-5 py-4 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-500 transition-all placeholder-[#475569]"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
+            <div className="space-y-4">
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <span className="text-slate-500 group-focus-within:text-violet-400 transition-colors">👤</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  required
+                  className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 text-sm font-medium"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <span className="text-slate-500 group-focus-within:text-violet-400 transition-colors">🔒</span>
+                </div>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  required
+                  className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 text-sm font-medium"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
             </div>
-            <div>
-              <input
-                type="password"
-                placeholder="Password"
-                required
-                className="w-full bg-[#111827] border border-[#1e293b] text-white px-5 py-4 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-500 transition-all placeholder-[#475569]"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {loginError && <p className="text-red-400 text-xs text-center font-medium bg-red-400/10 py-2 rounded-lg">{loginError}</p>}
+
+            {loginError && (
+              <div className="flex items-center gap-2 text-rose-400 text-xs font-bold justify-center bg-rose-500/5 py-3 rounded-xl border border-rose-500/10 animate-pulse">
+                <span>⚠️</span> {loginError}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#8B5CF6] hover:bg-[#7c3aed] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:active:scale-100 text-sm uppercase tracking-widest"
+              className="group relative w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 text-white font-black rounded-2xl transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:active:scale-100 text-xs uppercase tracking-[0.2em] overflow-hidden"
             >
-              {isLoading ? 'Connecting...' : 'SECURE ACCESS'}
+              <span className="relative z-10">
+                {isLoading ? 'Establishing Connection...' : 'Enter Dashboard'}
+              </span>
+              <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
             </button>
           </form>
+        </div>
+        
+        {/* Footer text */}
+        <div className="fixed bottom-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] pointer-events-none mix-blend-screen opacity-50">
+          Precision • Efficiency • Scale
         </div>
       </div>
     );
