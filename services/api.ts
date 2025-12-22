@@ -1,25 +1,17 @@
 import { RawRow, LoginResponse, SheetListResponse } from '../types';
 
 export const login = async (url: string, username: string, password: string): Promise<LoginResponse> => {
-  // Use GET for login to avoid CORS preflight (OPTIONS) issues with Google Apps Script
-  const params = new URLSearchParams({
-    action: "login",
-    username: username,
-    password: password
-  });
+  const fd = new URLSearchParams();
+  fd.append("action", "login");
+  fd.append("username", username);
+  fd.append("password", password);
   
   try {
-    const response = await fetch(`${url}?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}`);
-    }
+    const response = await fetch(url, { method: "POST", body: fd });
     return await response.json();
   } catch (error) {
     console.error("Login failed:", error);
-    return { 
-      success: false, 
-      message: "Connection Error: Check if Google Script is deployed with 'Who has access: Anyone'." 
-    };
+    return { success: false, message: "Network error or invalid Script URL" };
   }
 };
 
