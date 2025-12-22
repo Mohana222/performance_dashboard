@@ -283,7 +283,7 @@ const App: React.FC = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
-    setSelectedSheetIds([]);
+    // Persistence fix: We no longer clear selectedSheetIds here so localStorage preserves it
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
@@ -623,7 +623,7 @@ const App: React.FC = () => {
                       title="Attendance Summary: Monthly Pivot Grid" 
                       headers={processedSummaries.attendanceHeaders} 
                       data={processedSummaries.attendance} 
-                      filterColumns={['NAME', 'SNO']}
+                      filterColumns={['NAME']}
                     />
                   ) : (
                     <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
