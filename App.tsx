@@ -116,6 +116,7 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('ok'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -268,22 +269,29 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setLoginError('');
+    
+    // Attempt to log in via the first active project's URL
     const targetProject = projects.find(p => combinedSelectedProjectIds.includes(p.id)) || projects[0];
-    const res = await apiLogin(targetProject.url, username, password);
-    if (res.success) {
-      sessionStorage.setItem('ok', '1');
-      setIsAuthenticated(true);
-    } else {
-      setLoginError(res.message || 'Invalid login credentials');
+    
+    try {
+      const res = await apiLogin(targetProject.url, username, password);
+      if (res.success) {
+        sessionStorage.setItem('ok', '1');
+        setIsAuthenticated(true);
+      } else {
+        setLoginError(res.message || 'Invalid login credentials');
+      }
+    } catch (err) {
+      setLoginError('Connection refused. Is the Google Script set to "Access: Anyone"?');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
-    // Persistence fix: We no longer clear selectedSheetIds here so localStorage preserves it
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
@@ -534,10 +542,35 @@ const App: React.FC = () => {
               </div>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-violet-400 transition-colors">🔒</div>
-                <input type="password" placeholder="Password" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 text-sm font-medium" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <input 
+                  type={showPassword ? 'text' : 'password'} 
+                  placeholder="Password" 
+                  required 
+                  className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-12 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 text-sm font-medium" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-violet-400 transition-colors focus:outline-none"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
-            {loginError && <div className="flex items-center gap-2 text-rose-400 text-xs font-bold justify-center bg-rose-500/5 py-3 rounded-xl border border-rose-500/10 animate-pulse"><span>⚠️</span> {loginError}</div>}
+            {loginError && <div className="flex items-center gap-2 text-rose-400 text-xs font-bold justify-center bg-rose-500/5 py-3 rounded-xl border border-rose-500/10 animate-pulse text-center"><span>⚠️</span> {loginError}</div>}
             <button type="submit" disabled={isLoading} className="group relative w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 text-white font-black rounded-2xl transition-all shadow-xl active:scale-95 disabled:opacity-50 text-xs uppercase tracking-[0.2em] overflow-hidden">
               <span className="relative z-10">{isLoading ? 'Establishing Connection...' : 'Enter Dashboard'}</span>
               <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
