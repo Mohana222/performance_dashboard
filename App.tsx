@@ -199,6 +199,10 @@ const App: React.FC = () => {
     }
   };
 
+  const updateProject = (updated: Project) => {
+    setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+  };
+
   const deleteProject = (id: string) => {
     if (projects.length <= 1) return;
     setProjects(prev => prev.filter(p => p.id !== id));
@@ -505,7 +509,7 @@ const App: React.FC = () => {
              </div>
              <div className="space-y-2">
                 <h3 className="text-white font-bold text-xl">Connecting Hub</h3>
-                <p className="text-slate-500 max-w-sm">Aggregating records from your selected cloud spreadsheets. Please stand by.</p>
+                <p className="text-slate-500 max-sm">Aggregating records from your selected cloud spreadsheets. Please stand by.</p>
              </div>
           </div>
         ) : (
@@ -595,6 +599,7 @@ const App: React.FC = () => {
           projects={projects}
           activeProjectId={combinedSelectedProjectIds[0] || ''}
           onAdd={addProject}
+          onUpdate={updateProject}
           onDelete={deleteProject}
           onSelect={(id) => {
             const project = projects.find(p => p.id === id);
