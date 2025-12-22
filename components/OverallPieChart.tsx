@@ -5,6 +5,8 @@ import { COLORS } from '../constants';
 interface ChartData {
   name: string;
   value: number;
+  // Added index signature to resolve Recharts compatibility error: 'Index signature for type string is missing'
+  [key: string]: any;
 }
 
 interface OverallPieChartProps {
