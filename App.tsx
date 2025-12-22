@@ -268,22 +268,29 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setLoginError('');
+    
+    // Attempt to log in via the first active project's URL
     const targetProject = projects.find(p => combinedSelectedProjectIds.includes(p.id)) || projects[0];
-    const res = await apiLogin(targetProject.url, username, password);
-    if (res.success) {
-      sessionStorage.setItem('ok', '1');
-      setIsAuthenticated(true);
-    } else {
-      setLoginError(res.message || 'Invalid login credentials');
+    
+    try {
+      const res = await apiLogin(targetProject.url, username, password);
+      if (res.success) {
+        sessionStorage.setItem('ok', '1');
+        setIsAuthenticated(true);
+      } else {
+        setLoginError(res.message || 'Invalid login credentials');
+      }
+    } catch (err) {
+      setLoginError('Connection refused. Is the Google Script set to "Access: Anyone"?');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
-    // Persistence fix: We no longer clear selectedSheetIds here so localStorage preserves it
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
@@ -537,7 +544,7 @@ const App: React.FC = () => {
                 <input type="password" placeholder="Password" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 text-sm font-medium" value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
             </div>
-            {loginError && <div className="flex items-center gap-2 text-rose-400 text-xs font-bold justify-center bg-rose-500/5 py-3 rounded-xl border border-rose-500/10 animate-pulse"><span>⚠️</span> {loginError}</div>}
+            {loginError && <div className="flex items-center gap-2 text-rose-400 text-xs font-bold justify-center bg-rose-500/5 py-3 rounded-xl border border-rose-500/10 animate-pulse text-center"><span>⚠️</span> {loginError}</div>}
             <button type="submit" disabled={isLoading} className="group relative w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 text-white font-black rounded-2xl transition-all shadow-xl active:scale-95 disabled:opacity-50 text-xs uppercase tracking-[0.2em] overflow-hidden">
               <span className="relative z-10">{isLoading ? 'Establishing Connection...' : 'Enter Dashboard'}</span>
               <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
