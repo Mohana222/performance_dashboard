@@ -1,4 +1,3 @@
-
 export interface RawRow {
   [key: string]: string | number | null | undefined;
 }
@@ -23,7 +22,12 @@ export interface QCData {
   errorCount: number;
 }
 
-export type ViewType = 'overview' | 'raw' | 'annotator' | 'username' | 'qc-user' | 'qc-annotator' | 'projects';
+export interface AttendanceData {
+  name: string;
+  status: 'Present' | 'Absent';
+}
+
+export type ViewType = 'overview' | 'raw' | 'annotator' | 'username' | 'qc-user' | 'qc-annotator' | 'attendance' | 'projects';
 
 export interface LoginResponse {
   success: boolean;
