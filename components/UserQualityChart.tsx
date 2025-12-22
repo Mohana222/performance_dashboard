@@ -1,4 +1,3 @@
-
 import React, { useMemo } from 'react';
 import { 
   Bar, 
@@ -11,7 +10,7 @@ import {
   ComposedChart,
   Line
 } from 'recharts';
-import { COLORS } from '../constants.tsx';
+import { COLORS } from '../constants';
 
 interface UserData {
   name: string;

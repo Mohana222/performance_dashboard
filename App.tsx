@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { ViewType, RawRow, Project } from './types';
 import { getSheetList, getSheetData, login as apiLogin, findKey } from './services/api';
-import { MENU_ITEMS, COLORS, API_URL } from './constants.tsx';
+import { MENU_ITEMS, COLORS, API_URL } from './constants';
 import MultiSelect from './components/MultiSelect';
 import DataTable from './components/DataTable';
 import OverallPieChart from './components/OverallPieChart';
@@ -29,7 +28,6 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem('annotation_projects_v2');
     if (saved) return JSON.parse(saved);
-    // Legacy migration: try old key if v2 not found
     const legacy = localStorage.getItem('annotation_projects');
     if (legacy) {
       const parsed = JSON.parse(legacy);

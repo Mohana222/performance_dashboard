@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Project } from '../types';
-import { COLORS } from '../constants.tsx';
+import { COLORS } from '../constants';
 
 interface ProjectManagerProps {
   projects: Project[];
@@ -41,7 +40,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* Project List */}
           <div className="grid grid-cols-1 gap-4">
             {projects.map(project => (
               <div 
@@ -92,7 +90,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
             ))}
           </div>
 
-          {/* Add New Project */}
           {!showAdd ? (
             <button 
               onClick={() => setShowAdd(true)}
