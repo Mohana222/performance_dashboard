@@ -231,26 +231,49 @@ const App: React.FC = () => {
   };
 
   const processedSummaries = useMemo(() => {
-    if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], attendance: [], attendanceHeaders: [] };
+    if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
     const keys = Object.keys(rawData[0]);
     const kAnn = findKey(keys, "Annotator Name"), kUser = findKey(keys, "UserName"), kFrame = findKey(keys, "Frame ID"), kObj = findKey(keys, "Number of Object Annotated"), kQC = findKey(keys, "Internal QC Name"), kErr = findKey(keys, "Internal Polygon Error Count");
-    const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {}, userMap: Record<string, { frameSet: Set<string>, objects: number }> = {}, qcUserMap: Record<string, { objects: number, errors: number }> = {}, qcAnnMap: Record<string, { objects: number, errors: number }> = {};
+    
+    const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
+    const userMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
+    const qcUserMap: Record<string, { objects: number, errors: number }> = {};
+    const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
+    const combinedPerformanceMap: Record<string, { objects: number }> = {};
+    
     const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {}, uniqueSheetNames = new Set<string>();
+    
     rawData.forEach(row => {
       const category = row['Project Category'], sheetSource = String(row['Sheet Source'] || '');
       if (category === 'production') {
-        const ann = String(row[kAnn || ''] || '').trim(), user = String(row[kUser || ''] || '').trim(), frameId = String(row[kFrame || ''] || '').trim(), objCount = parseFloat(String(row[kObj || ''] || '0')) || 0, qcName = String(row[kQC || ''] || '').trim(), errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
+        const ann = String(row[kAnn || ''] || '').trim();
+        const user = String(row[kUser || ''] || '').trim();
+        const frameId = String(row[kFrame || ''] || '').trim();
+        const objCount = parseFloat(String(row[kObj || ''] || '0')) || 0;
+        const qcName = String(row[kQC || ''] || '').trim();
+        const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
+
+        // Annotator specific
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (frameId) annotatorMap[ann].frameSet.add(frameId);
           annotatorMap[ann].objects += objCount;
           if (qcName) { if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 }; qcAnnMap[ann].objects += objCount; qcAnnMap[ann].errors += errCount; }
         }
+        
+        // User specific
         if (user) {
           if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
           if (frameId) userMap[user].frameSet.add(frameId);
           userMap[user].objects += objCount;
           if (qcName) { if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 }; qcUserMap[user].objects += objCount; qcUserMap[user].errors += errCount; }
+        }
+
+        // Consolidated identity for the Pie Chart: prioritized Annotator Name, then UserName
+        const primaryName = ann || user;
+        if (primaryName) {
+          if (!combinedPerformanceMap[primaryName]) combinedPerformanceMap[primaryName] = { objects: 0 };
+          combinedPerformanceMap[primaryName].objects += objCount;
         }
       }
       if (category === 'hourly' && sheetSource.toLowerCase().endsWith('login')) {
@@ -267,6 +290,7 @@ const App: React.FC = () => {
         }
       }
     });
+    
     const sortedSheetHeaders = Array.from(uniqueSheetNames).sort((a, b) => parseSheetDate(a) - parseSheetDate(b) || a.localeCompare(b, undefined, { numeric: true }));
     const attendanceFlat = Object.keys(employeeData).map(name => {
       const meta = employeeData[name], row: Record<string, string> = { _originalSno: meta.sno, NAME: meta.name };
@@ -276,11 +300,13 @@ const App: React.FC = () => {
       const snoA = parseInt(a._originalSno, 10), snoB = parseInt(b._originalSno, 10);
       return (!isNaN(snoA) && !isNaN(snoB)) ? snoA - snoB : a.NAME.localeCompare(b.NAME);
     }).map((row, idx) => { const { _originalSno, ...rest } = row; return { SNO: (idx + 1).toString(), ...rest }; });
+    
     return {
       annotators: Object.entries(annotatorMap).map(([name, data]) => ({ name, frameCount: data.frameSet.size, objectCount: data.objects })),
       users: Object.entries(userMap).map(([name, data]) => ({ name, frameCount: data.frameSet.size, objectCount: data.objects })),
       qcUsers: Object.entries(qcUserMap).map(([name, data]) => ({ name, objectCount: data.objects, errorCount: data.errors })),
       qcAnn: Object.entries(qcAnnMap).map(([name, data]) => ({ name, objectCount: data.objects, errorCount: data.errors })),
+      combinedPerformance: Object.entries(combinedPerformanceMap).map(([name, data]) => ({ name, objectCount: data.objects })),
       attendance: attendanceFlat, attendanceHeaders: ['SNO', 'NAME', ...sortedSheetHeaders]
     };
   }, [rawData]);
@@ -299,8 +325,10 @@ const App: React.FC = () => {
   }, [processedSummaries, rawData]);
 
   const pieData = useMemo(() => {
-    const sorted = [...processedSummaries.annotators].sort((a,b) => b.objectCount - a.objectCount).slice(0, 5);
-    return sorted.map(a => ({ name: a.name, value: a.objectCount }));
+    // Show all users in the pie chart as requested
+    return [...processedSummaries.combinedPerformance]
+      .sort((a,b) => b.objectCount - a.objectCount)
+      .map(a => ({ name: a.name, value: a.objectCount }));
   }, [processedSummaries]);
 
   if (!isAuthenticated) return (
