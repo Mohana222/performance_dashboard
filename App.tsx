@@ -12,7 +12,7 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-// Default projects used ONLY if the database is 100% confirmed as uninitialized
+// Default projects used ONLY if the database is confirmed to be brand new
 const INITIAL_SETUP_PROJECTS: Project[] = [
   {
     id: '1',
@@ -93,7 +93,7 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Core global state: Loaded from server on auth
+  // Global State for Projects
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
@@ -105,7 +105,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // EFFECT: Fetch Master Projects from Server DB
+  // HYDRATION: Fetch global projects from the database sheet
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
@@ -113,13 +113,13 @@ const App: React.FC = () => {
         const globalProjects = await fetchGlobalProjects(API_URL);
         
         if (globalProjects === null) {
-          console.error("Master database is unreachable.");
+          console.error("Critical: Could not load projects from master database.");
+          // We do not set defaults here to prevent accidental overwrites if user saves later
         } else if (globalProjects.length === 0) {
-          // If the sheet is actually empty, we show defaults locally, 
-          // but we DON'T push them to the server yet.
+          // Genuinely empty DB
           setProjects(INITIAL_SETUP_PROJECTS);
         } else {
-          // This is our single source of truth - Hydrated from Sheet Cell A1
+          // Successfully loaded master list
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -128,7 +128,6 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  // EFFECT: Fetch Sheet names for selected projects
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
       const fetchAllSheets = async () => {
@@ -157,7 +156,6 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated, combinedSelectedProjectIds, projects]);
 
-  // EFFECT: Fetch and Merge actual data rows
   useEffect(() => {
     if (isAuthenticated && selectedSheetIds.length > 0) {
       const fetchAndMergeData = async () => {
@@ -209,7 +207,7 @@ const App: React.FC = () => {
         setLoginError(res.message || 'Invalid credentials');
       }
     } catch (err) {
-      setLoginError('Could not connect to authentication service.');
+      setLoginError('Authentication failed. Check Script URL.');
     } finally {
       setIsLoading(false);
     }
@@ -218,7 +216,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
-    // Clean up local UI state only
+    // Local cleanup only
     setRawData([]);
     setProjects([]);
     setSelectedProdProjectIds([]);
@@ -226,14 +224,19 @@ const App: React.FC = () => {
     setSelectedSheetIds([]);
   };
 
-  // EXPLICIT ACTION: Save Projects to Server DB
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
     const updated = [...projects, newProject];
+    
+    // UI update
     setProjects(updated);
-    // Push updated state to Google Sheet DB cell A1
-    await saveGlobalProjects(API_URL, updated);
+    
+    // Server update
+    const success = await saveGlobalProjects(API_URL, updated);
+    if (!success) {
+      alert("Error: Changes could not be saved to the database.");
+    }
   };
 
   const updateProject = async (updated: Project) => {
@@ -260,7 +263,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Data processing for charts
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
     const keys = Object.keys(rawData[0]);
