@@ -31,6 +31,7 @@ export type ViewType = 'overview' | 'raw' | 'annotator' | 'username' | 'qc-user'
 
 export interface LoginResponse {
   success: boolean;
+  role?: 'admin' | 'user';
   message?: string;
 }
 
