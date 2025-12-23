@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface MultiSelectProps {
@@ -14,9 +13,9 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ options, selected, onChange, 
   const isAllSelected = selected.length === options.length && options.length > 0;
 
   const toggleSelection = (option: string) => {
-    if (selected.includes(option) && selected.length > 1) {
+    if (selected.includes(option)) {
       onChange(selected.filter(s => s !== option));
-    } else if (!selected.includes(option)) {
+    } else {
       onChange([...selected, option]);
     }
   };
@@ -38,7 +37,6 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ options, selected, onChange, 
         </div>
         
         <div className="flex items-center gap-1.5">
-          {/* Merged ALL/NONE Toggle Button */}
           <button 
             onClick={handleToggleAll}
             className={`text-[9px] font-black px-3 py-1 rounded-lg border transition-all active:scale-95 shadow-lg ${
@@ -50,7 +48,6 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ options, selected, onChange, 
             {isAllSelected ? 'NONE' : 'ALL'}
           </button>
 
-          {/* Enlarge Icon next to the toggle button */}
           {onEnlarge && (
             <button 
               onClick={onEnlarge}
@@ -79,7 +76,6 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ options, selected, onChange, 
         </div>
       </div>
       
-      {/* Changed to flex-col and overflow-y-auto for top-to-bottom scroll */}
       <div className="flex flex-col gap-2 overflow-y-auto custom-scrollbar max-h-[180px] pr-1 py-1">
         {options.map(option => (
           <button

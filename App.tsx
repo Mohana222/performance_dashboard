@@ -133,15 +133,13 @@ const App: React.FC = () => {
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('selected_prod_project_ids');
-    if (saved && JSON.parse(saved).length > 0) return JSON.parse(saved);
-    // Default to all production projects if none selected
+    if (saved) return JSON.parse(saved);
     return DEFAULT_PROJECTS.filter(p => p.category === 'production').map(p => p.id);
   });
 
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('selected_hourly_project_ids');
-    if (saved && JSON.parse(saved).length > 0) return JSON.parse(saved);
-    // Try to find any existing hourly projects to select by default
+    if (saved) return JSON.parse(saved);
     const hourlyIds = projects.filter(p => p.category === 'hourly').map(p => p.id);
     return hourlyIds;
   });
@@ -172,16 +170,14 @@ const App: React.FC = () => {
     localStorage.setItem('selected_sheet_ids', JSON.stringify(selectedSheetIds));
   }, [selectedSheetIds]);
 
-  // Effect to handle initial "Select All" sheets if none are selected
+  // Effect to handle initial "Select All" sheets if none are selected AND no preference exists
   useEffect(() => {
-    if (availableSheets.length > 0 && selectedSheetIds.length === 0) {
-      const saved = localStorage.getItem('selected_sheet_ids');
-      // If we literally have nothing saved OR we are on a fresh login session
-      if (!saved || JSON.parse(saved).length === 0) {
-        setSelectedSheetIds(availableSheets.map(s => s.id));
-      }
+    const saved = localStorage.getItem('selected_sheet_ids');
+    // ONLY auto-select if there is absolutely no record of a choice in localStorage (saved === null)
+    if (availableSheets.length > 0 && saved === null) {
+      setSelectedSheetIds(availableSheets.map(s => s.id));
     }
-  }, [availableSheets, selectedSheetIds.length]);
+  }, [availableSheets]);
 
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
@@ -287,7 +283,6 @@ const App: React.FC = () => {
     setIsLoading(true);
     setLoginError('');
     
-    // Attempt to log in via the first active project's URL
     const targetProject = projects.find(p => combinedSelectedProjectIds.includes(p.id)) || projects[0];
     
     try {
@@ -405,7 +400,6 @@ const App: React.FC = () => {
         uniqueSheetNames.add(sheetSource);
         const rowKeys = Object.keys(row);
         
-        // Use findKey for more robust targeting than hardcoded indices
         const sKey = findKey(rowKeys, "SNO") || rowKeys[0];
         const nKey = findKey(rowKeys, "NAME") || rowKeys[1];
         const lKey = findKey(rowKeys, "Login Time") || rowKeys[5];
@@ -414,7 +408,6 @@ const App: React.FC = () => {
         const employeeName = String(row[nKey] || '').trim();
         const loginTimeVal = row[lKey];
 
-        // Sanitize SNO: If it contains ':' it's likely a leaked timestamp from a misaligned sheet
         if (snoVal.includes(':')) snoVal = "";
         
         if (employeeName && employeeName !== "undefined" && employeeName !== "") {
@@ -446,7 +439,6 @@ const App: React.FC = () => {
       return a.localeCompare(b, undefined, { numeric: true });
     });
 
-    // Pivot data and prepare for sorting
     const attendanceFlatRaw = Object.keys(employeeData).map(name => {
       const meta = employeeData[name];
       const row: Record<string, string> = { _originalSno: meta.sno, NAME: meta.name };
@@ -456,7 +448,6 @@ const App: React.FC = () => {
       return row;
     });
 
-    // Sort by original SNO if possible, otherwise by name
     const sortedFlat = attendanceFlatRaw.sort((a, b) => {
       const snoA = parseInt(a._originalSno, 10);
       const snoB = parseInt(b._originalSno, 10);
@@ -464,7 +455,6 @@ const App: React.FC = () => {
       return a.NAME.localeCompare(b.NAME);
     });
 
-    // Map to final format and re-index SNO for perfectly ascending numbers
     const attendanceFlat = sortedFlat.map((row, idx) => {
       const { _originalSno, ...rest } = row;
       return {
@@ -595,7 +585,6 @@ const App: React.FC = () => {
           </form>
         </div>
         
-        {/* Footer implementation with Privacy, About, Copyright and Version */}
         <div className="mt-auto w-full max-w-md relative z-10">
           <InfoFooter />
           <div className="text-center pb-8 pt-2 text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] pointer-events-none mix-blend-screen opacity-50">Precision • Efficiency • Scale</div>
