@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { COLORS } from '../constants';
@@ -30,51 +31,48 @@ const OverallPieChart: React.FC<OverallPieChartProps> = ({ data, title }) => {
     return null;
   };
 
-  // Improved label renderer with lines
+  // Improved label renderer with better spacing and combined info
   const renderCustomizedLabel = (props: any) => {
-    const { cx, cy, midAngle, outerRadius, percent, name } = props;
+    const { cx, cy, midAngle, outerRadius, percent, name, fill } = props;
     const RADIAN = Math.PI / 180;
     const sin = Math.sin(-RADIAN * midAngle);
     const cos = Math.cos(-RADIAN * midAngle);
-    const sx = cx + (outerRadius + 10) * cos;
-    const sy = cy + (outerRadius + 10) * sin;
-    const mx = cx + (outerRadius + 30) * cos;
-    const my = cy + (outerRadius + 30) * sin;
-    const ex = mx + (cos >= 0 ? 1 : -1) * 22;
+    
+    // Dynamic offsets to prevent label overlap for many items
+    const radiusOffset = 25;
+    const lineExtension = 35;
+    
+    const sx = cx + (outerRadius + 5) * cos;
+    const sy = cy + (outerRadius + 5) * sin;
+    const mx = cx + (outerRadius + radiusOffset) * cos;
+    const my = cy + (outerRadius + radiusOffset) * sin;
+    const ex = mx + (cos >= 0 ? 1 : -1) * lineExtension;
     const ey = my;
     const textAnchor = cos >= 0 ? 'start' : 'end';
+    
+    const percentage = (percent * 100).toFixed(1);
+    const displayName = name.length > 18 ? name.substring(0, 15) + '...' : name;
 
     return (
       <g>
-        <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={props.fill} fill="none" strokeWidth={1.5} opacity={0.6} />
-        <circle cx={ex} cy={ey} r={2} fill={props.fill} stroke="none" />
+        <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" strokeWidth={1.5} opacity={0.5} />
+        <circle cx={ex} cy={ey} r={2} fill={fill} stroke="none" />
         <text 
-          x={ex + (cos >= 0 ? 1 : -1) * 8} 
+          x={ex + (cos >= 0 ? 6 : -6)} 
           y={ey} 
           textAnchor={textAnchor} 
-          fill={props.fill} 
+          fill={fill} 
           dominantBaseline="central"
-          className="text-[10px] font-bold"
+          className="text-[9px] font-black tracking-tight"
         >
-          {`${(percent * 100).toFixed(1)}%`}
-        </text>
-        <text 
-          x={ex + (cos >= 0 ? 1 : -1) * 8} 
-          y={ey} 
-          dy={14}
-          textAnchor={textAnchor} 
-          fill="#94a3b8" 
-          dominantBaseline="central"
-          className="text-[9px] font-medium opacity-80"
-        >
-          {name.length > 15 ? name.substring(0, 12) + '...' : name}
+          {`${displayName} (${percentage}%)`}
         </text>
       </g>
     );
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 h-[400px] flex flex-col shadow-2xl relative overflow-hidden group">
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 h-[500px] flex flex-col shadow-2xl relative overflow-hidden group">
       <div className="absolute top-0 left-0 w-32 h-32 bg-violet-500/5 blur-[60px] rounded-full"></div>
       
       <div className="flex items-center justify-between mb-4">
@@ -83,32 +81,33 @@ const OverallPieChart: React.FC<OverallPieChartProps> = ({ data, title }) => {
           {title}
         </h3>
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
-          Live Distribution
+          All Annotators
         </span>
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 mt-4">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
               cx="50%"
-              cy="48%"
-              innerRadius={75}
-              outerRadius={100}
-              paddingAngle={4}
+              cy="50%"
+              innerRadius={70}
+              outerRadius={105}
+              paddingAngle={1.5}
               dataKey="value"
-              stroke="none"
+              stroke="#0f172a"
+              strokeWidth={1}
               labelLine={false}
               label={renderCustomizedLabel}
               animationBegin={0}
-              animationDuration={1200}
+              animationDuration={1000}
             >
               {data.map((entry, index) => (
                 <Cell 
                   key={`cell-${index}`} 
                   fill={COLORS.chart[index % COLORS.chart.length]} 
-                  style={{ filter: `drop-shadow(0 0 8px ${COLORS.chart[index % COLORS.chart.length]}44)` }}
+                  style={{ filter: `drop-shadow(0 0 5px ${COLORS.chart[index % COLORS.chart.length]}33)` }}
                 />
               ))}
             </Pie>
