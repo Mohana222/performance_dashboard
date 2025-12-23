@@ -12,6 +12,24 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
+// Seed projects including both the requested Production and Hourly trackers
+const SEED_PROJECTS: Project[] = [
+  {
+    id: 'dc-ramp-prod-dec-2025',
+    name: 'DC <> rAMP - Production Tracker Dec 2025',
+    url: 'https://script.google.com/macros/s/AKfycbybBF1xbbUHCr2kTlLvVCdtc2UVGZKzLQasRNf_0pwwFSImsHo0f1Nq5fp56nJhJ45Z/exec',
+    color: COLORS.primary,
+    category: 'production'
+  },
+  {
+    id: 'ramp-hourly-dec-2025',
+    name: 'rAMP - Hourly Tracker_Dec 2025',
+    url: 'https://script.google.com/macros/s/AKfycbxGEjoJ-e9McSgYWCUS45FDf4Ox_uRtE9cxAMdGWyYSccQieLOuVxntRY93basHQicVKg/exec',
+    color: COLORS.secondary,
+    category: 'hourly'
+  }
+];
+
 const parseTimeToMinutes = (val: any): number | null => {
   if (val === null || val === undefined) return null;
   if (val instanceof Date) return val.getHours() * 60 + val.getMinutes();
@@ -82,7 +100,6 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Global State for Projects
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
@@ -94,7 +111,11 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // HYDRATION: Fetch global projects from the database sheet
+  const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
+    await saveGlobalProjects(API_URL, updatedProjects);
+  }, []);
+
+  // Secure Load: Fetch projects from the master database spreadsheet
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
@@ -102,13 +123,13 @@ const App: React.FC = () => {
         const globalProjects = await fetchGlobalProjects(API_URL);
         
         if (globalProjects === null) {
-          console.error("Critical: Could not load projects from master database.");
-          setProjects([]);
+          console.warn("Could not sync with project database. Using local state if available.");
         } else if (globalProjects.length === 0) {
-          // Genuinely empty DB - user must manually add spreadsheets
-          setProjects([]);
+          // Genuinely empty: Seed with the requested production and hourly sheets
+          setProjects(SEED_PROJECTS);
+          await saveGlobalProjects(API_URL, SEED_PROJECTS);
         } else {
-          // Successfully loaded master list
+          // Successful fetch from master DB: Sync for all users
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -193,10 +214,10 @@ const App: React.FC = () => {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
       } else {
-        setLoginError(res.message || 'Invalid credentials');
+        setLoginError(res.message || 'Invalid login credentials');
       }
     } catch (err) {
-      setLoginError('Authentication failed. Check Script URL.');
+      setLoginError('Connection refused. Please check the master Script URL.');
     } finally {
       setIsLoading(false);
     }
@@ -205,7 +226,6 @@ const App: React.FC = () => {
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
-    // Local cleanup only
     setRawData([]);
     setProjects([]);
     setSelectedProdProjectIds([]);
@@ -217,21 +237,14 @@ const App: React.FC = () => {
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
     const updated = [...projects, newProject];
-    
-    // UI update
     setProjects(updated);
-    
-    // Server update for permanent persistence across all users/devices
-    const success = await saveGlobalProjects(API_URL, updated);
-    if (!success) {
-      alert("Error: Changes could not be saved to the master database.");
-    }
+    await syncProjectsToServer(updated);
   };
 
   const updateProject = async (updated: Project) => {
     const newList = projects.map(p => p.id === updated.id ? updated : p);
     setProjects(newList);
-    await saveGlobalProjects(API_URL, newList);
+    await syncProjectsToServer(newList);
   };
 
   const deleteProject = async (id: string) => {
@@ -239,7 +252,7 @@ const App: React.FC = () => {
     setProjects(newList);
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
-    await saveGlobalProjects(API_URL, newList);
+    await syncProjectsToServer(newList);
   };
 
   const handleSelectProject = (id: string) => {
@@ -456,7 +469,6 @@ const App: React.FC = () => {
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>
                 <h3 className="text-slate-400 font-bold text-lg">No Active Data Sources</h3>
-                <p className="text-slate-500 text-xs">Go to <b>Project Setup</b> in the sidebar to add spreadsheets.</p>
               </div>
             ) : (
               <>
