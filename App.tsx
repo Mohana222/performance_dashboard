@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ViewType, RawRow, Project, AttendanceData } from './types';
+import { ViewType, RawRow, Project } from './types';
 import { getSheetList, getSheetData, login as apiLogin, findKey } from './services/api';
 import { MENU_ITEMS, COLORS, API_URL } from './constants';
 import MultiSelect from './components/MultiSelect';
@@ -12,7 +12,13 @@ import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
 const DEFAULT_PROJECTS: Project[] = [
-  { id: '1', name: 'Default Production', url: API_URL, color: COLORS.primary, category: 'production' }
+  {
+    id: '1',
+    name: 'Production Tracker',
+    url: API_URL,
+    color: COLORS.primary,
+    category: 'production'
+  }
 ];
 
 const parseTimeToMinutes = (val: any): number | null => {
@@ -75,7 +81,6 @@ const StarField: React.FC = () => {
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('ok'));
-  const [userRole, setUserRole] = useState<'desicrew' | 'user'>(sessionStorage.getItem('role') as any || 'user');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -171,22 +176,20 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setLoginError('');
-    setSelectedProdProjectIds([]);
-    setSelectedHourlyProjectIds([]);
-    setSelectedSheetIds([]);
-    const targetProject = projects.find(p => p.category === 'production') || projects[0];
+    
     try {
-      const res = await apiLogin(targetProject.url, username, password);
+      const res = await apiLogin(API_URL, username, password);
       if (res.success) {
         sessionStorage.setItem('ok', '1');
-        sessionStorage.setItem('role', res.role || 'user');
         setIsAuthenticated(true);
-        setUserRole(res.role || 'user');
+        setSelectedProdProjectIds([]);
+        setSelectedHourlyProjectIds([]);
+        setSelectedSheetIds([]);
       } else {
         setLoginError(res.message || 'Invalid login credentials');
       }
     } catch (err) {
-      setLoginError('Connection refused. Check Google Script URL.');
+      setLoginError('Connection refused. Please check the master Script URL.');
     } finally {
       setIsLoading(false);
     }
@@ -194,7 +197,6 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
-    sessionStorage.removeItem('role');
     setIsAuthenticated(false);
     setRawData([]);
     setSelectedProdProjectIds([]);
@@ -203,18 +205,16 @@ const App: React.FC = () => {
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
-    if (userRole !== 'desicrew') return;
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     setProjects(prev => [...prev, { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] }]);
   };
 
   const updateProject = (updated: Project) => {
-    if (userRole !== 'desicrew') return;
     setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
   };
 
   const deleteProject = (id: string) => {
-    if (userRole !== 'desicrew' || projects.length <= 1) return;
+    if (projects.length <= 1) return;
     setProjects(prev => prev.filter(p => p.id !== id));
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
@@ -307,20 +307,51 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <StarField />
       <div className="max-w-md w-full bg-slate-900/50 backdrop-blur-[32px] border border-white/10 p-10 md:p-14 rounded-[3.5rem] shadow-2xl animate-fade-up login-glow mt-auto relative z-10">
-        <div className="text-center mb-12">
+        <div className="text-center mb-10">
           <div className="inline-block px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-black tracking-widest uppercase mb-4">Secure Portal</div>
-          <h1 className="text-5xl md:text-6xl font-black tracking-tighter shimmer-text py-2">DesiCrew</h1>
+          <h1 className="text-5xl font-black tracking-tighter shimmer-text py-2">DesiCrew</h1>
         </div>
+
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-4">
-            <input type="text" placeholder="Username" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" value={username} onChange={e => setUsername(e.target.value)} />
+            <input 
+              type="text" 
+              placeholder="Username" 
+              required 
+              className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
+              value={username} 
+              onChange={e => setUsername(e.target.value)} 
+            />
             <div className="relative">
-              <input type={showPassword ? 'text' : 'password'} placeholder="Password" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 pr-12 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" value={password} onChange={e => setPassword(e.target.value)} />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none">{showPassword ? '👁️' : '🔒'}</button>
+              <input 
+                type={showPassword ? 'text' : 'password'} 
+                placeholder="Password" 
+                required 
+                className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 pr-12 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+              />
+              <button 
+                type="button" 
+                onClick={() => setShowPassword(!showPassword)} 
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none"
+              >
+                {showPassword ? '👁️' : '🔒'}
+              </button>
             </div>
           </div>
-          {loginError && <div className="text-rose-400 text-xs font-bold text-center animate-pulse">{loginError}</div>}
-          <button type="submit" disabled={isLoading} className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-xs uppercase tracking-[0.2em]">{isLoading ? 'Connecting...' : 'Enter Dashboard'} {userRole === 'desicrew' ? '' : ''}</button>
+          {loginError && (
+            <div className="text-rose-400 text-xs font-bold text-center animate-pulse py-2 px-4 bg-rose-500/10 rounded-xl border border-rose-500/20">
+              {loginError}
+            </div>
+          )}
+          <button 
+            type="submit" 
+            disabled={isLoading} 
+            className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-[10px] uppercase tracking-[0.2em]"
+          >
+            {isLoading ? 'Processing...' : 'Access Dashboard'}
+          </button>
         </form>
       </div>
       <div className="mt-auto w-full max-w-md relative z-10"><InfoFooter /></div>
@@ -359,7 +390,7 @@ const App: React.FC = () => {
         <header className="flex justify-between items-center mb-10 ml-12">
           <div className="flex-1">
             <h1 className="text-4xl font-black text-white tracking-tighter">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Dashboard'}</h1>
-            <p className="text-slate-500 text-sm mt-1">Role: <span className="text-violet-400 font-bold uppercase">{userRole}</span> • <span className="text-violet-400 font-bold">{selectedSheetIds.length}</span> datasets active.</p>
+            <p className="text-slate-500 text-sm mt-1">Active Projects: <span className="text-violet-400 font-bold">{selectedSheetIds.length}</span> datasets synchronization live.</p>
           </div>
           <button onClick={handleLogout} className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl transition-all hover:bg-red-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
         </header>
@@ -403,7 +434,7 @@ const App: React.FC = () => {
         <ProjectManager 
           projects={projects} 
           activeProjectId={combinedSelectedProjectIds[0] || ''} 
-          userRole={userRole}
+          userRole="desicrew"
           onAdd={addProject} 
           onUpdate={updateProject} 
           onDelete={deleteProject} 
