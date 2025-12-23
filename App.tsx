@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { ViewType, RawRow, Project } from './types';
 import { getSheetList, getSheetData, login as apiLogin, findKey } from './services/api';
@@ -325,7 +326,6 @@ const App: React.FC = () => {
   }, [processedSummaries, rawData]);
 
   const pieData = useMemo(() => {
-    // Show all users in the pie chart as requested
     return [...processedSummaries.combinedPerformance]
       .sort((a,b) => b.objectCount - a.objectCount)
       .map(a => ({ name: a.name, value: a.objectCount }));
@@ -342,29 +342,33 @@ const App: React.FC = () => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-4">
-            <input 
-              type="text" 
-              placeholder="Username" 
-              required 
-              className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
-              value={username} 
-              onChange={e => setUsername(e.target.value)} 
-            />
-            <div className="relative">
+            <div className="relative group">
+              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-focus-within:text-violet-400 transition-colors">👤</span>
+              <input 
+                type="text" 
+                placeholder="Username" 
+                required 
+                className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
+                value={username} 
+                onChange={e => setUsername(e.target.value)} 
+              />
+            </div>
+            <div className="relative group">
+              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-focus-within:text-violet-400 transition-colors">🔒</span>
               <input 
                 type={showPassword ? 'text' : 'password'} 
                 placeholder="Password" 
                 required 
-                className="w-full bg-slate-900/60 border border-slate-800/80 text-white px-5 py-4 pr-12 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
+                className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-12 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
               />
               <button 
                 type="button" 
                 onClick={() => setShowPassword(!showPassword)} 
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none text-lg"
               >
-                {showPassword ? '👁️' : '🔒'}
+                {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
             </div>
           </div>
