@@ -104,10 +104,14 @@ const App: React.FC = () => {
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
-    await saveGlobalProjects(API_URL, updatedProjects);
+    const success = await saveGlobalProjects(API_URL, updatedProjects);
+    if (!success) {
+      console.error("Critical: Failed to sync project database with server.");
+      // Optional: Add a toast notification here
+    }
   }, []);
 
-  // Secure Load: Fetch projects but prevent overwriting server if fetch fails
+  // Secure Load: Fetch projects from the master sheet database on login/mount
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
@@ -115,14 +119,13 @@ const App: React.FC = () => {
         const globalProjects = await fetchGlobalProjects(API_URL);
         
         if (globalProjects === null) {
-          // Connection error: Do not overwrite, maybe show a warning later
-          console.warn("Could not sync with project database. Using local state if available.");
+          console.warn("Could not reach master project database. Check internet connection.");
         } else if (globalProjects.length === 0) {
-          // Genuinely empty: Initialize for the first time
+          // Only initialize defaults if the server is truly empty
           setProjects(DEFAULT_PROJECTS);
           await saveGlobalProjects(API_URL, DEFAULT_PROJECTS);
         } else {
-          // Successful fetch: Sync state
+          // Successfully hydrated from backend (Global state for all users)
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -219,6 +222,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
+    // Clearing local state for security, but backend persistence remains intact
     setRawData([]);
     setProjects([]);
     setSelectedProdProjectIds([]);
@@ -231,6 +235,7 @@ const App: React.FC = () => {
     const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
     const updated = [...projects, newProject];
     setProjects(updated);
+    // Explicit sync to backend DB sheet
     await syncProjectsToServer(updated);
   };
 
@@ -241,8 +246,10 @@ const App: React.FC = () => {
   };
 
   const deleteProject = async (id: string) => {
-    // Prevent deleting the very last project for safety
-    if (projects.length <= 1) return;
+    // Manual deletion only
+    if (projects.length <= 1 && projects[0]?.id === id) {
+       // Allow deleting if it's the only one, but UI usually requires at least one source
+    }
     const newList = projects.filter(p => p.id !== id);
     setProjects(newList);
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
