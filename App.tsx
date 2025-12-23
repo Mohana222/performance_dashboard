@@ -9,6 +9,7 @@ import SummaryCards from './components/SummaryCards';
 import ProjectManager from './components/ProjectManager';
 import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
+import InfoFooter from './components/InfoFooter';
 
 const DEFAULT_PROJECTS: Project[] = [
   { id: '1', name: 'Default Production', url: API_URL, color: COLORS.primary, category: 'production' }
@@ -132,12 +133,17 @@ const App: React.FC = () => {
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('selected_prod_project_ids');
-    return saved ? JSON.parse(saved) : [];
+    if (saved && JSON.parse(saved).length > 0) return JSON.parse(saved);
+    // Default to all production projects if none selected
+    return DEFAULT_PROJECTS.filter(p => p.category === 'production').map(p => p.id);
   });
 
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('selected_hourly_project_ids');
-    return saved ? JSON.parse(saved) : [];
+    if (saved && JSON.parse(saved).length > 0) return JSON.parse(saved);
+    // Try to find any existing hourly projects to select by default
+    const hourlyIds = projects.filter(p => p.category === 'hourly').map(p => p.id);
+    return hourlyIds;
   });
 
   const combinedSelectedProjectIds = useMemo(() => 
@@ -165,6 +171,17 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('selected_sheet_ids', JSON.stringify(selectedSheetIds));
   }, [selectedSheetIds]);
+
+  // Effect to handle initial "Select All" sheets if none are selected
+  useEffect(() => {
+    if (availableSheets.length > 0 && selectedSheetIds.length === 0) {
+      const saved = localStorage.getItem('selected_sheet_ids');
+      // If we literally have nothing saved OR we are on a fresh login session
+      if (!saved || JSON.parse(saved).length === 0) {
+        setSelectedSheetIds(availableSheets.map(s => s.id));
+      }
+    }
+  }, [availableSheets, selectedSheetIds.length]);
 
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
@@ -208,7 +225,7 @@ const App: React.FC = () => {
     if (availableSheets.length > 0) {
       const availableIds = new Set(availableSheets.map(s => s.id));
       const validSelectedIds = selectedSheetIds.filter(id => availableIds.has(id));
-      if (validSelectedIds.length !== selectedSheetIds.length) {
+      if (validSelectedIds.length !== selectedSheetIds.length && validSelectedIds.length > 0) {
         setSelectedSheetIds(validSelectedIds);
       }
     }
@@ -527,9 +544,9 @@ const App: React.FC = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-4 relative overflow-hidden">
         <StarField />
-        <div className="max-w-md w-full bg-slate-900/50 backdrop-blur-[32px] border border-white/10 p-10 md:p-14 rounded-[3.5rem] shadow-2xl relative z-10 animate-fade-up login-glow">
+        <div className="max-w-md w-full bg-slate-900/50 backdrop-blur-[32px] border border-white/10 p-10 md:p-14 rounded-[3.5rem] shadow-2xl relative z-10 animate-fade-up login-glow mt-auto">
           <div className="relative z-10 text-center mb-12">
              <div className="inline-block px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-black tracking-widest uppercase mb-4">Secure Network Portal</div>
             <h1 className="text-5xl md:text-6xl font-black tracking-tighter shimmer-text py-2">DesiCrew</h1>
@@ -577,7 +594,12 @@ const App: React.FC = () => {
             </button>
           </form>
         </div>
-        <div className="fixed bottom-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] pointer-events-none mix-blend-screen opacity-50">Precision • Efficiency • Scale</div>
+        
+        {/* Footer implementation with Privacy, About, Copyright and Version */}
+        <div className="mt-auto w-full max-w-md relative z-10">
+          <InfoFooter />
+          <div className="text-center pb-8 pt-2 text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] pointer-events-none mix-blend-screen opacity-50">Precision • Efficiency • Scale</div>
+        </div>
       </div>
     );
   }
@@ -628,7 +650,7 @@ const App: React.FC = () => {
              <h3 className="text-white font-bold text-xl">Connecting Connection Hub...</h3>
           </div>
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-10 pb-20">
             {combinedSelectedProjectIds.length === 0 || selectedSheetIds.length === 0 ? (
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>

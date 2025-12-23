@@ -129,7 +129,8 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   const aggregateAttendance = useMemo(() => {
     let totalPresent = 0;
     let totalAbsent = 0;
-    Object.values(totals).forEach(t => {
+    // Fix: Explicitly cast Object.values(totals) to the expected type to resolve "Property does not exist on type 'unknown'" errors
+    (Object.values(totals) as Array<{ value: any; label?: string; type?: 'numeric' | 'attendance' }>).forEach(t => {
       if (t.type === 'attendance') {
         totalPresent += t.value.present;
         totalAbsent += t.value.absent;
