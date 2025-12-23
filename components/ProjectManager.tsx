@@ -4,7 +4,7 @@ import { Project } from '../types';
 interface ProjectManagerProps {
   projects: Project[];
   activeProjectId: string;
-  userRole: 'admin' | 'user';
+  userRole: 'desicrew' | 'user';
   onAdd: (project: Omit<Project, 'id' | 'color'>) => void;
   onUpdate: (project: Project) => void;
   onDelete: (id: string) => void;
@@ -23,7 +23,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
   const [editUrl, setEditUrl] = useState('');
   const [editCategory, setEditCategory] = useState<'production' | 'hourly'>('production');
 
-  const isAdmin = userRole === 'admin';
+  const isAdmin = userRole === 'desicrew';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

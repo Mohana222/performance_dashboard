@@ -75,7 +75,7 @@ const StarField: React.FC = () => {
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('ok'));
-  const [userRole, setUserRole] = useState<'admin' | 'user'>(sessionStorage.getItem('role') as any || 'user');
+  const [userRole, setUserRole] = useState<'desicrew' | 'user'>(sessionStorage.getItem('role') as any || 'user');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -203,18 +203,18 @@ const App: React.FC = () => {
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
-    if (userRole !== 'admin') return;
+    if (userRole !== 'desicrew') return;
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     setProjects(prev => [...prev, { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] }]);
   };
 
   const updateProject = (updated: Project) => {
-    if (userRole !== 'admin') return;
+    if (userRole !== 'desicrew') return;
     setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
   };
 
   const deleteProject = (id: string) => {
-    if (userRole !== 'admin' || projects.length <= 1) return;
+    if (userRole !== 'desicrew' || projects.length <= 1) return;
     setProjects(prev => prev.filter(p => p.id !== id));
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
@@ -320,7 +320,7 @@ const App: React.FC = () => {
             </div>
           </div>
           {loginError && <div className="text-rose-400 text-xs font-bold text-center animate-pulse">{loginError}</div>}
-          <button type="submit" disabled={isLoading} className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-xs uppercase tracking-[0.2em]">{isLoading ? 'Connecting...' : 'Enter Dashboard'}</button>
+          <button type="submit" disabled={isLoading} className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-xs uppercase tracking-[0.2em]">{isLoading ? 'Connecting...' : 'Enter Dashboard'} {userRole === 'desicrew' ? '' : ''}</button>
         </form>
       </div>
       <div className="mt-auto w-full max-w-md relative z-10"><InfoFooter /></div>
