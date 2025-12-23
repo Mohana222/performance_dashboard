@@ -12,7 +12,8 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-const DEFAULT_PROJECTS: Project[] = [
+// Default projects used ONLY if the database is 100% confirmed as uninitialized
+const INITIAL_SETUP_PROJECTS: Project[] = [
   {
     id: '1',
     name: 'Production Tracker',
@@ -92,6 +93,7 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Core global state: Loaded from server on auth
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
@@ -103,15 +105,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
-    const success = await saveGlobalProjects(API_URL, updatedProjects);
-    if (!success) {
-      console.error("Critical: Failed to sync project database with server.");
-      // Optional: Add a toast notification here
-    }
-  }, []);
-
-  // Secure Load: Fetch projects from the master sheet database on login/mount
+  // EFFECT: Fetch Master Projects from Server DB
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
@@ -119,13 +113,13 @@ const App: React.FC = () => {
         const globalProjects = await fetchGlobalProjects(API_URL);
         
         if (globalProjects === null) {
-          console.warn("Could not reach master project database. Check internet connection.");
+          console.error("Master database is unreachable.");
         } else if (globalProjects.length === 0) {
-          // Only initialize defaults if the server is truly empty
-          setProjects(DEFAULT_PROJECTS);
-          await saveGlobalProjects(API_URL, DEFAULT_PROJECTS);
+          // If the sheet is actually empty, we show defaults locally, 
+          // but we DON'T push them to the server yet.
+          setProjects(INITIAL_SETUP_PROJECTS);
         } else {
-          // Successfully hydrated from backend (Global state for all users)
+          // This is our single source of truth - Hydrated from Sheet Cell A1
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -134,6 +128,7 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated]);
 
+  // EFFECT: Fetch Sheet names for selected projects
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
       const fetchAllSheets = async () => {
@@ -162,6 +157,7 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated, combinedSelectedProjectIds, projects]);
 
+  // EFFECT: Fetch and Merge actual data rows
   useEffect(() => {
     if (isAuthenticated && selectedSheetIds.length > 0) {
       const fetchAndMergeData = async () => {
@@ -210,10 +206,10 @@ const App: React.FC = () => {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
       } else {
-        setLoginError(res.message || 'Invalid login credentials');
+        setLoginError(res.message || 'Invalid credentials');
       }
     } catch (err) {
-      setLoginError('Connection refused. Please check the master Script URL.');
+      setLoginError('Could not connect to authentication service.');
     } finally {
       setIsLoading(false);
     }
@@ -222,7 +218,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
-    // Clearing local state for security, but backend persistence remains intact
+    // Clean up local UI state only
     setRawData([]);
     setProjects([]);
     setSelectedProdProjectIds([]);
@@ -230,31 +226,28 @@ const App: React.FC = () => {
     setSelectedSheetIds([]);
   };
 
+  // EXPLICIT ACTION: Save Projects to Server DB
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
     const updated = [...projects, newProject];
     setProjects(updated);
-    // Explicit sync to backend DB sheet
-    await syncProjectsToServer(updated);
+    // Push updated state to Google Sheet DB cell A1
+    await saveGlobalProjects(API_URL, updated);
   };
 
   const updateProject = async (updated: Project) => {
     const newList = projects.map(p => p.id === updated.id ? updated : p);
     setProjects(newList);
-    await syncProjectsToServer(newList);
+    await saveGlobalProjects(API_URL, newList);
   };
 
   const deleteProject = async (id: string) => {
-    // Manual deletion only
-    if (projects.length <= 1 && projects[0]?.id === id) {
-       // Allow deleting if it's the only one, but UI usually requires at least one source
-    }
     const newList = projects.filter(p => p.id !== id);
     setProjects(newList);
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
-    await syncProjectsToServer(newList);
+    await saveGlobalProjects(API_URL, newList);
   };
 
   const handleSelectProject = (id: string) => {
@@ -267,6 +260,7 @@ const App: React.FC = () => {
     }
   };
 
+  // Data processing for charts
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
     const keys = Object.keys(rawData[0]);
