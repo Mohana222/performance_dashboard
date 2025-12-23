@@ -131,29 +131,17 @@ const App: React.FC = () => {
     return DEFAULT_PROJECTS;
   });
   
-  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('selected_prod_project_ids');
-    if (saved) return JSON.parse(saved);
-    return DEFAULT_PROJECTS.filter(p => p.category === 'production').map(p => p.id);
-  });
-
-  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('selected_hourly_project_ids');
-    if (saved) return JSON.parse(saved);
-    const hourlyIds = projects.filter(p => p.category === 'hourly').map(p => p.id);
-    return hourlyIds;
-  });
+  // Selection states initialized to empty arrays to ensure they are unselected after every fresh login/logout
+  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
+  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
+  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
 
   const combinedSelectedProjectIds = useMemo(() => 
     [...selectedProdProjectIds, ...selectedHourlyProjectIds]
   , [selectedProdProjectIds, selectedHourlyProjectIds]);
 
   const [availableSheets, setAvailableSheets] = useState<{ id: string; label: string; projectId: string; sheetName: string }[]>([]);
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('selected_sheet_ids');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
@@ -161,23 +149,8 @@ const App: React.FC = () => {
     localStorage.setItem('annotation_projects_v2', JSON.stringify(projects));
   }, [projects]);
 
-  useEffect(() => {
-    localStorage.setItem('selected_prod_project_ids', JSON.stringify(selectedProdProjectIds));
-    localStorage.setItem('selected_hourly_project_ids', JSON.stringify(selectedHourlyProjectIds));
-  }, [selectedProdProjectIds, selectedHourlyProjectIds]);
-
-  useEffect(() => {
-    localStorage.setItem('selected_sheet_ids', JSON.stringify(selectedSheetIds));
-  }, [selectedSheetIds]);
-
-  // Effect to handle initial "Select All" sheets if none are selected AND no preference exists
-  useEffect(() => {
-    const saved = localStorage.getItem('selected_sheet_ids');
-    // ONLY auto-select if there is absolutely no record of a choice in localStorage (saved === null)
-    if (availableSheets.length > 0 && saved === null) {
-      setSelectedSheetIds(availableSheets.map(s => s.id));
-    }
-  }, [availableSheets]);
+  // Selections are not persisted to localStorage anymore to satisfy "unselected after login/logout" requirement.
+  // We keep the selected state only in memory for the duration of the current authenticated session.
 
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
@@ -221,9 +194,11 @@ const App: React.FC = () => {
     if (availableSheets.length > 0) {
       const availableIds = new Set(availableSheets.map(s => s.id));
       const validSelectedIds = selectedSheetIds.filter(id => availableIds.has(id));
-      if (validSelectedIds.length !== selectedSheetIds.length && validSelectedIds.length > 0) {
+      if (validSelectedIds.length !== selectedSheetIds.length) {
         setSelectedSheetIds(validSelectedIds);
       }
+    } else {
+      setSelectedSheetIds([]);
     }
   }, [availableSheets]);
 
@@ -283,7 +258,12 @@ const App: React.FC = () => {
     setIsLoading(true);
     setLoginError('');
     
-    const targetProject = projects.find(p => combinedSelectedProjectIds.includes(p.id)) || projects[0];
+    // Reset selections on login attempt to ensure clean state
+    setSelectedProdProjectIds([]);
+    setSelectedHourlyProjectIds([]);
+    setSelectedSheetIds([]);
+
+    const targetProject = projects.find(p => p.category === 'production') || projects[0];
     
     try {
       const res = await apiLogin(targetProject.url, username, password);
@@ -294,7 +274,7 @@ const App: React.FC = () => {
         setLoginError(res.message || 'Invalid login credentials');
       }
     } catch (err) {
-      setLoginError('Connection refused. Is the Google Script set to "Access: Anyone"?');
+      setLoginError('Connection refused. Check Google Script URL.');
     } finally {
       setIsLoading(false);
     }
@@ -304,6 +284,10 @@ const App: React.FC = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
+    // Explicitly reset selections on logout
+    setSelectedProdProjectIds([]);
+    setSelectedHourlyProjectIds([]);
+    setSelectedSheetIds([]);
   };
 
   const addProject = (p: Omit<Project, 'id' | 'color'>) => {
@@ -314,11 +298,7 @@ const App: React.FC = () => {
       color: availableColors[Math.floor(Math.random() * availableColors.length)]
     };
     setProjects(prev => [...prev, newProject]);
-    if (p.category === 'production') {
-      setSelectedProdProjectIds(prev => [...prev, newProject.id]);
-    } else {
-      setSelectedHourlyProjectIds(prev => [...prev, newProject.id]);
-    }
+    // Requirement: Newly added spreadsheets must remain unselected
   };
 
   const updateProject = (updated: Project) => {
@@ -609,7 +589,9 @@ const App: React.FC = () => {
           <div className="space-y-6">
             <MultiSelect options={prodProjects.map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={prodProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} title="Select Spreadsheets (Production)" onEnlarge={() => setEnlargedModal('projects-prod')} />
             <MultiSelect options={hourlyProjects.map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={hourlyProjects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} title="Select Spreadsheets (Hourly)" onEnlarge={() => setEnlargedModal('projects-hourly')} />
-            <MultiSelect options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} title="Select Data Sheets" onEnlarge={() => setEnlargedModal('sheets')} />
+            {combinedSelectedProjectIds.length > 0 && (
+              <MultiSelect options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} title="Select Data Sheets" onEnlarge={() => setEnlargedModal('sheets')} />
+            )}
           </div>
         </div>
         <div className="p-8 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 min-w-[24rem]">
