@@ -12,17 +12,6 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-// Default projects used ONLY if the database is confirmed to be brand new
-const INITIAL_SETUP_PROJECTS: Project[] = [
-  {
-    id: '1',
-    name: 'Production Tracker',
-    url: API_URL,
-    color: COLORS.primary,
-    category: 'production'
-  }
-];
-
 const parseTimeToMinutes = (val: any): number | null => {
   if (val === null || val === undefined) return null;
   if (val instanceof Date) return val.getHours() * 60 + val.getMinutes();
@@ -114,10 +103,10 @@ const App: React.FC = () => {
         
         if (globalProjects === null) {
           console.error("Critical: Could not load projects from master database.");
-          // We do not set defaults here to prevent accidental overwrites if user saves later
+          setProjects([]);
         } else if (globalProjects.length === 0) {
-          // Genuinely empty DB
-          setProjects(INITIAL_SETUP_PROJECTS);
+          // Genuinely empty DB - user must manually add spreadsheets
+          setProjects([]);
         } else {
           // Successfully loaded master list
           setProjects(globalProjects);
@@ -232,10 +221,10 @@ const App: React.FC = () => {
     // UI update
     setProjects(updated);
     
-    // Server update
+    // Server update for permanent persistence across all users/devices
     const success = await saveGlobalProjects(API_URL, updated);
     if (!success) {
-      alert("Error: Changes could not be saved to the database.");
+      alert("Error: Changes could not be saved to the master database.");
     }
   };
 
@@ -467,6 +456,7 @@ const App: React.FC = () => {
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>
                 <h3 className="text-slate-400 font-bold text-lg">No Active Data Sources</h3>
+                <p className="text-slate-500 text-xs">Go to <b>Project Setup</b> in the sidebar to add spreadsheets.</p>
               </div>
             ) : (
               <>
