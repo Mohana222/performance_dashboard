@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ViewType, RawRow, Project } from './types';
-import { getSheetList, getSheetData, login as apiLogin, findKey } from './services/api';
+import { getSheetList, getSheetData, login as apiLogin, findKey, fetchGlobalProjects, saveGlobalProjects } from './services/api';
 import { MENU_ITEMS, COLORS, API_URL } from './constants';
 import MultiSelect from './components/MultiSelect';
 import DataTable from './components/DataTable';
@@ -92,10 +92,8 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('annotation_projects_v2');
-    return saved ? JSON.parse(saved) : DEFAULT_PROJECTS;
-  });
+  // Projects now initialized empty and fetched from API
+  const [projects, setProjects] = useState<Project[]>([]);
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
@@ -106,7 +104,29 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  useEffect(() => { localStorage.setItem('annotation_projects_v2', JSON.stringify(projects)); }, [projects]);
+  // Function to sync projects to backend
+  const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
+    await saveGlobalProjects(API_URL, updatedProjects);
+  }, []);
+
+  // Fetch projects on mount or after authentication
+  useEffect(() => {
+    if (isAuthenticated) {
+      const loadProjects = async () => {
+        setIsLoading(true);
+        const globalProjects = await fetchGlobalProjects(API_URL);
+        // If server is empty, initialize with DEFAULT_PROJECTS and sync back
+        if (globalProjects.length === 0) {
+          setProjects(DEFAULT_PROJECTS);
+          await saveGlobalProjects(API_URL, DEFAULT_PROJECTS);
+        } else {
+          setProjects(globalProjects);
+        }
+        setIsLoading(false);
+      };
+      loadProjects();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
@@ -200,25 +220,33 @@ const App: React.FC = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
+    setProjects([]);
     setSelectedProdProjectIds([]);
     setSelectedHourlyProjectIds([]);
     setSelectedSheetIds([]);
   };
 
-  const addProject = (p: Omit<Project, 'id' | 'color'>) => {
+  const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
-    setProjects(prev => [...prev, { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] }]);
+    const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
+    const updated = [...projects, newProject];
+    setProjects(updated);
+    await syncProjectsToServer(updated);
   };
 
-  const updateProject = (updated: Project) => {
-    setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+  const updateProject = async (updated: Project) => {
+    const newList = projects.map(p => p.id === updated.id ? updated : p);
+    setProjects(newList);
+    await syncProjectsToServer(newList);
   };
 
-  const deleteProject = (id: string) => {
+  const deleteProject = async (id: string) => {
     if (projects.length <= 1) return;
-    setProjects(prev => prev.filter(p => p.id !== id));
+    const newList = projects.filter(p => p.id !== id);
+    setProjects(newList);
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
+    await syncProjectsToServer(newList);
   };
 
   const handleSelectProject = (id: string) => {
@@ -254,7 +282,6 @@ const App: React.FC = () => {
         const qcName = String(row[kQC || ''] || '').trim();
         const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
 
-        // Annotator specific
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (frameId) annotatorMap[ann].frameSet.add(frameId);
@@ -262,7 +289,6 @@ const App: React.FC = () => {
           if (qcName) { if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 }; qcAnnMap[ann].objects += objCount; qcAnnMap[ann].errors += errCount; }
         }
         
-        // User specific
         if (user) {
           if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
           if (frameId) userMap[user].frameSet.add(frameId);
@@ -270,7 +296,6 @@ const App: React.FC = () => {
           if (qcName) { if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 }; qcUserMap[user].objects += objCount; qcUserMap[user].errors += errCount; }
         }
 
-        // Consolidated identity for the Pie Chart: prioritized Annotator Name, then UserName
         const primaryName = ann || user;
         if (primaryName) {
           if (!combinedPerformanceMap[primaryName]) combinedPerformanceMap[primaryName] = { objects: 0 };

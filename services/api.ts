@@ -1,4 +1,5 @@
-import { RawRow, LoginResponse, SheetListResponse } from '../types';
+
+import { RawRow, LoginResponse, SheetListResponse, Project } from '../types';
 
 export const login = async (url: string, username: string, password: string): Promise<LoginResponse> => {
   const fd = new URLSearchParams();
@@ -12,6 +13,32 @@ export const login = async (url: string, username: string, password: string): Pr
   } catch (error) {
     console.error("Login failed:", error);
     return { success: false, message: "Network error or invalid Script URL" };
+  }
+};
+
+export const fetchGlobalProjects = async (url: string): Promise<Project[]> => {
+  try {
+    const response = await fetch(`${url}?action=getProjects`);
+    const data = await response.json();
+    return data.projects || [];
+  } catch (error) {
+    console.error("Failed to fetch global projects:", error);
+    return [];
+  }
+};
+
+export const saveGlobalProjects = async (url: string, projects: Project[]): Promise<boolean> => {
+  const fd = new URLSearchParams();
+  fd.append("action", "saveProjects");
+  fd.append("projects", JSON.stringify(projects));
+  
+  try {
+    const response = await fetch(url, { method: "POST", body: fd });
+    const result = await response.json();
+    return result.success;
+  } catch (error) {
+    console.error("Failed to save global projects:", error);
+    return false;
   }
 };
 
