@@ -129,7 +129,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   const aggregateAttendance = useMemo(() => {
     let totalPresent = 0;
     let totalAbsent = 0;
-    // Fix: Explicitly cast Object.values(totals) to the expected type to resolve "Property does not exist on type 'unknown'" errors
     (Object.values(totals) as Array<{ value: any; label?: string; type?: 'numeric' | 'attendance' }>).forEach(t => {
       if (t.type === 'attendance') {
         totalPresent += t.value.present;
@@ -264,9 +263,9 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                   {headers.map(header => (
                     <td key={header} className="px-8 py-4 text-sm text-slate-300 whitespace-nowrap group-hover:text-white transition-colors">
                       {row[header] === 'Present' ? (
-                        <span className="text-emerald-400 font-bold">{row[header]}</span>
+                        <span className="text-emerald-400 font-bold">P</span>
                       ) : row[header] === 'Absent' ? (
-                        <span className="text-rose-400 font-bold">{row[header]}</span>
+                        <span className="text-rose-400 font-bold">L</span>
                       ) : row[header] === 'NIL' ? (
                         <span className="text-slate-600 font-medium">{row[header]}</span>
                       ) : (
@@ -298,13 +297,13 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                       /* Next to Grand Totals (NAME column): Show Aggregate Attendance across all sheets if applicable */
                       (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) ? (
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">Aggregate (All Sheets)</span>
+                          <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">AGGREGATE (ALL SHEETS)</span>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">PRESENT</span>
+                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span>
                             <span className="text-emerald-400 tabular-nums">{aggregateAttendance.present}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">ABSENT</span>
+                            <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span>
                             <span className="text-rose-400 tabular-nums">{aggregateAttendance.absent}</span>
                           </div>
                         </div>
@@ -317,11 +316,11 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                         {totals[header].type === 'attendance' ? (
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">PRESENT</span>
+                              <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span>
                               <span className="text-emerald-400 tabular-nums">{totals[header].value.present}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">ABSENT</span>
+                              <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span>
                               <span className="text-rose-400 tabular-nums">{totals[header].value.absent}</span>
                             </div>
                           </div>
