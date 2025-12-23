@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Project } from '../types';
 
@@ -102,7 +103,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, activeProject
                           <span className="truncate">{project.name}</span>
                           <span className={`text-[8px] px-2 py-0.5 rounded-full uppercase ${project.category === 'production' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>{project.category}</span>
                         </h4>
-                        <p className="text-[10px] text-slate-500 truncate font-mono">{project.url}</p>
                       </div>
                     </div>
                     
