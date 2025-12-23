@@ -92,7 +92,6 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Projects now initialized empty and fetched from API
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
@@ -104,22 +103,26 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // Function to sync projects to backend
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
     await saveGlobalProjects(API_URL, updatedProjects);
   }, []);
 
-  // Fetch projects on mount or after authentication
+  // Secure Load: Fetch projects but prevent overwriting server if fetch fails
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
         setIsLoading(true);
         const globalProjects = await fetchGlobalProjects(API_URL);
-        // If server is empty, initialize with DEFAULT_PROJECTS and sync back
-        if (globalProjects.length === 0) {
+        
+        if (globalProjects === null) {
+          // Connection error: Do not overwrite, maybe show a warning later
+          console.warn("Could not sync with project database. Using local state if available.");
+        } else if (globalProjects.length === 0) {
+          // Genuinely empty: Initialize for the first time
           setProjects(DEFAULT_PROJECTS);
           await saveGlobalProjects(API_URL, DEFAULT_PROJECTS);
         } else {
+          // Successful fetch: Sync state
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -203,9 +206,6 @@ const App: React.FC = () => {
       if (res.success) {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
-        setSelectedProdProjectIds([]);
-        setSelectedHourlyProjectIds([]);
-        setSelectedSheetIds([]);
       } else {
         setLoginError(res.message || 'Invalid login credentials');
       }
@@ -241,6 +241,7 @@ const App: React.FC = () => {
   };
 
   const deleteProject = async (id: string) => {
+    // Prevent deleting the very last project for safety
     if (projects.length <= 1) return;
     const newList = projects.filter(p => p.id !== id);
     setProjects(newList);

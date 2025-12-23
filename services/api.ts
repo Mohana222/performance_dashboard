@@ -16,14 +16,19 @@ export const login = async (url: string, username: string, password: string): Pr
   }
 };
 
-export const fetchGlobalProjects = async (url: string): Promise<Project[]> => {
+/**
+ * Fetches global project list. Returns null if the request fails, 
+ * allowing the app to prevent overwriting the database.
+ */
+export const fetchGlobalProjects = async (url: string): Promise<Project[] | null> => {
   try {
     const response = await fetch(`${url}?action=getProjects`);
+    if (!response.ok) throw new Error("Server error");
     const data = await response.json();
     return data.projects || [];
   } catch (error) {
     console.error("Failed to fetch global projects:", error);
-    return [];
+    return null; 
   }
 };
 
