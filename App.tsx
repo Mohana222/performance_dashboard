@@ -120,9 +120,9 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Persistence: Initial load from localStorage cache
+  // Persistence: Initial load from localStorage
   const [projects, setProjects] = useState<Project[]>(() => {
-    const cached = localStorage.getItem('dc_projects_cache');
+    const cached = localStorage.getItem('dc_projects');
     return cached ? JSON.parse(cached) : [];
   });
   
@@ -162,68 +162,69 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('dc_sel_prod', JSON.stringify(selectedProdProjectIds)); }, [selectedProdProjectIds]);
   useEffect(() => { localStorage.setItem('dc_sel_hourly', JSON.stringify(selectedHourlyProjectIds)); }, [selectedHourlyProjectIds]);
   useEffect(() => { localStorage.setItem('dc_sel_sheets', JSON.stringify(selectedSheetIds)); }, [selectedSheetIds]);
+  useEffect(() => { localStorage.setItem('dc_projects', JSON.stringify(projects)); }, [projects]);
+
+  const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
+    await saveGlobalProjects(API_URL, updatedProjects);
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
-      const syncProjects = async () => {
+      const loadProjects = async () => {
         setIsLoading(true);
-        try {
-          const globalProjects = await fetchGlobalProjects(API_URL);
-          if (globalProjects && globalProjects.length > 0) {
-            setProjects(globalProjects);
-            localStorage.setItem('dc_projects_cache', JSON.stringify(globalProjects));
-          } else if (projects.length === 0) {
-            setProjects(SEED_PROJECTS);
-            await saveGlobalProjects(API_URL, SEED_PROJECTS);
-          }
-        } catch (e) {
-          console.error("Failed to sync global projects:", e);
-        } finally {
-          setIsLoading(false);
+        const globalProjects = await fetchGlobalProjects(API_URL);
+        if (globalProjects && globalProjects.length > 0) {
+          setProjects(globalProjects);
+        } else if (!projects.length) {
+          setProjects(SEED_PROJECTS);
+          await saveGlobalProjects(API_URL, SEED_PROJECTS);
         }
+        setIsLoading(false);
       };
-      syncProjects();
+      loadProjects();
     }
   }, [isAuthenticated]);
 
-  // Instant Birthday Checker
+  // Instant Birthday Checker (Scans all configured projects immediately)
   useEffect(() => {
     if (isAuthenticated && projects.length > 0) {
-      const scanBirthdays = async () => {
+      const scanAllBirthdays = async () => {
         const today = new Date();
         const tDay = today.getDate();
         const tMonth = today.getMonth() + 1;
-        const names: string[] = [];
+        const allBirthdayNames: string[] = [];
 
         await Promise.all(projects.map(async (project) => {
           try {
             const list = await getSheetList(project.url);
-            const bSheets = list.filter(s => s.toLowerCase().includes('birthday'));
-            await Promise.all(bSheets.map(async (sName) => {
-              const data = await getSheetData(project.url, sName);
-              data.forEach(row => {
+            const birthdaySheets = list.filter(name => name.toLowerCase().includes('birthday'));
+            
+            await Promise.all(birthdaySheets.map(async (sheetName) => {
+              const bData = await getSheetData(project.url, sheetName);
+              const matches = bData.filter(row => {
                 const dobRaw = String(row['DOB'] || row['dob'] || row['Date of Birth'] || '').trim();
-                const nameRaw = String(row['NAME'] || row['name'] || row['Employee Name'] || '').trim();
-                if (!dobRaw || !nameRaw) return;
+                if (!dobRaw) return false;
                 const d = new Date(dobRaw);
                 if (!isNaN(d.getTime())) {
-                  if (d.getDate() === tDay && (d.getMonth() + 1) === tMonth) names.push(nameRaw);
-                } else {
-                  const p = dobRaw.split('/');
-                  if (p.length >= 2 && parseInt(p[0], 10) === tMonth && parseInt(p[1], 10) === tDay) {
-                    names.push(nameRaw);
-                  }
+                  return d.getDate() === tDay && (d.getMonth() + 1) === tMonth;
                 }
-              });
+                const parts = dobRaw.split('/');
+                if (parts.length >= 2) {
+                  return parseInt(parts[0], 10) === tMonth && parseInt(parts[1], 10) === tDay;
+                }
+                return false;
+              }).map(row => String(row['NAME'] || row['name'] || row['Employee Name'] || 'Someone').trim());
+              allBirthdayNames.push(...matches);
             }));
-          } catch (e) {}
+          } catch (err) { console.debug(`Skipping ${project.name} for birthday scan.`); }
         }));
 
-        if (names.length > 0) {
-          setBirthdayMessage(`Happy Birthday! ${Array.from(new Set(names)).join(', ')} 🎂`);
+        if (allBirthdayNames.length > 0) {
+          const uniqueNames = Array.from(new Set(allBirthdayNames));
+          setBirthdayMessage(`Happy Birthday! ${uniqueNames.join(', ')} 🎂`);
         }
       };
-      scanBirthdays();
+      scanAllBirthdays();
     }
   }, [isAuthenticated, projects]);
 
@@ -334,40 +335,25 @@ const App: React.FC = () => {
   };
 
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
-    setIsLoading(true);
-    const newProject = { ...p, id: `pid-${Date.now()}`, color: COLORS.chart[projects.length % COLORS.chart.length] };
+    const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
+    const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
     const updated = [...projects, newProject];
-    const success = await saveGlobalProjects(API_URL, updated);
-    if (success) {
-      setProjects(updated);
-      localStorage.setItem('dc_projects_cache', JSON.stringify(updated));
-    }
-    setIsLoading(false);
+    setProjects(updated);
+    await syncProjectsToServer(updated);
   };
 
   const updateProject = async (updated: Project) => {
-    setIsLoading(true);
     const newList = projects.map(p => p.id === updated.id ? updated : p);
-    const success = await saveGlobalProjects(API_URL, newList);
-    if (success) {
-      setProjects(newList);
-      localStorage.setItem('dc_projects_cache', JSON.stringify(newList));
-    }
-    setIsLoading(false);
+    setProjects(newList);
+    await syncProjectsToServer(newList);
   };
 
   const deleteProject = async (id: string) => {
-    if (!confirm("Delete this project permanently for all users?")) return;
-    setIsLoading(true);
     const newList = projects.filter(p => p.id !== id);
-    const success = await saveGlobalProjects(API_URL, newList);
-    if (success) {
-      setProjects(newList);
-      localStorage.setItem('dc_projects_cache', JSON.stringify(newList));
-      setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
-      setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
-    }
-    setIsLoading(false);
+    setProjects(newList);
+    setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
+    setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
+    await syncProjectsToServer(newList);
   };
 
   const handleSelectProject = (id: string) => {
@@ -615,7 +601,7 @@ const App: React.FC = () => {
       </main>
 
       {showProjectManager && (
-        <ProjectManager projects={projects} selectedProjectIds={combinedSelectedProjectIds} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
+        <ProjectManager projects={projects} activeProjectId={combinedSelectedProjectIds[0] || ''} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
       )}
       {enlargedModal === 'projects-prod' && <SelectionModal title="Production Projects" options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
       {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Projects" options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
