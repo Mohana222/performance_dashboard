@@ -51,13 +51,9 @@ const parseTimeToMinutes = (val: any): number | null => {
   return null;
 };
 
-/**
- * Specifically normalizes MM/DD/YYYY text to YYYY-MM-DD
- */
 const normalizeDateValue = (val: any): string => {
   if (!val) return "";
   const s = String(val).trim();
-  // Match MM/DD/YYYY or M/D/YYYY
   const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
   const match = s.match(dateRegex);
   if (match) {
@@ -66,7 +62,6 @@ const normalizeDateValue = (val: any): string => {
     const year = match[3];
     return `${year}-${month}-${day}`;
   }
-  // Fallback for other potential date formats (like ISO) to keep them clean
   const d = new Date(s);
   if (!isNaN(d.getTime()) && s.includes('-')) {
     const year = d.getFullYear();
@@ -125,14 +120,28 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  // Persistence: Initial load from localStorage cache
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const cached = localStorage.getItem('dc_projects_cache');
+    return cached ? JSON.parse(cached) : [];
+  });
   
-  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
-  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
+  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>(() => {
+    const cached = localStorage.getItem('dc_sel_prod');
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>(() => {
+    const cached = localStorage.getItem('dc_sel_hourly');
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => {
+    const cached = localStorage.getItem('dc_sel_sheets');
+    return cached ? JSON.parse(cached) : [];
+  });
 
   const combinedSelectedProjectIds = useMemo(() => [...selectedProdProjectIds, ...selectedHourlyProjectIds], [selectedProdProjectIds, selectedHourlyProjectIds]);
   const [availableSheets, setAvailableSheets] = useState<{ id: string; label: string; projectId: string; sheetName: string }[]>([]);
+  const [birthdayMessage, setBirthdayMessage] = useState<string>('');
 
   const groupedSheetsForUI = useMemo(() => {
     return combinedSelectedProjectIds.map(pid => {
@@ -149,32 +158,78 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
-    await saveGlobalProjects(API_URL, updatedProjects);
-  }, []);
+  // Persistence Effects
+  useEffect(() => { localStorage.setItem('dc_sel_prod', JSON.stringify(selectedProdProjectIds)); }, [selectedProdProjectIds]);
+  useEffect(() => { localStorage.setItem('dc_sel_hourly', JSON.stringify(selectedHourlyProjectIds)); }, [selectedHourlyProjectIds]);
+  useEffect(() => { localStorage.setItem('dc_sel_sheets', JSON.stringify(selectedSheetIds)); }, [selectedSheetIds]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      const loadProjects = async () => {
+      const syncProjects = async () => {
         setIsLoading(true);
-        const globalProjects = await fetchGlobalProjects(API_URL);
-        if (globalProjects === null) {
-          console.warn("Could not sync with project database. Using local state if available.");
-        } else if (globalProjects.length === 0) {
-          setProjects(SEED_PROJECTS);
-          await saveGlobalProjects(API_URL, SEED_PROJECTS);
-        } else {
-          setProjects(globalProjects);
+        try {
+          const globalProjects = await fetchGlobalProjects(API_URL);
+          if (globalProjects && globalProjects.length > 0) {
+            setProjects(globalProjects);
+            localStorage.setItem('dc_projects_cache', JSON.stringify(globalProjects));
+          } else if (projects.length === 0) {
+            setProjects(SEED_PROJECTS);
+            await saveGlobalProjects(API_URL, SEED_PROJECTS);
+          }
+        } catch (e) {
+          console.error("Failed to sync global projects:", e);
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       };
-      loadProjects();
+      syncProjects();
     }
   }, [isAuthenticated]);
 
+  // Instant Birthday Checker
+  useEffect(() => {
+    if (isAuthenticated && projects.length > 0) {
+      const scanBirthdays = async () => {
+        const today = new Date();
+        const tDay = today.getDate();
+        const tMonth = today.getMonth() + 1;
+        const names: string[] = [];
+
+        await Promise.all(projects.map(async (project) => {
+          try {
+            const list = await getSheetList(project.url);
+            const bSheets = list.filter(s => s.toLowerCase().includes('birthday'));
+            await Promise.all(bSheets.map(async (sName) => {
+              const data = await getSheetData(project.url, sName);
+              data.forEach(row => {
+                const dobRaw = String(row['DOB'] || row['dob'] || row['Date of Birth'] || '').trim();
+                const nameRaw = String(row['NAME'] || row['name'] || row['Employee Name'] || '').trim();
+                if (!dobRaw || !nameRaw) return;
+                const d = new Date(dobRaw);
+                if (!isNaN(d.getTime())) {
+                  if (d.getDate() === tDay && (d.getMonth() + 1) === tMonth) names.push(nameRaw);
+                } else {
+                  const p = dobRaw.split('/');
+                  if (p.length >= 2 && parseInt(p[0], 10) === tMonth && parseInt(p[1], 10) === tDay) {
+                    names.push(nameRaw);
+                  }
+                }
+              });
+            }));
+          } catch (e) {}
+        }));
+
+        if (names.length > 0) {
+          setBirthdayMessage(`Happy Birthday! ${Array.from(new Set(names)).join(', ')} 🎂`);
+        }
+      };
+      scanBirthdays();
+    }
+  }, [isAuthenticated, projects]);
+
   useEffect(() => {
     if (isAuthenticated && combinedSelectedProjectIds.length > 0) {
-      const fetchAllSheets = async () => {
+      const fetchAvailableSheetList = async () => {
         setIsLoading(true);
         const allSheets: { id: string; label: string; projectId: string; sheetName: string }[] = [];
         await Promise.all(combinedSelectedProjectIds.map(async (pid) => {
@@ -198,7 +253,7 @@ const App: React.FC = () => {
         setAvailableSheets(allSheets);
         setIsLoading(false);
       };
-      fetchAllSheets();
+      fetchAvailableSheetList();
     } else {
       setAvailableSheets([]);
       if (combinedSelectedProjectIds.length === 0) setRawData([]);
@@ -222,46 +277,23 @@ const App: React.FC = () => {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
               const headers = data.length > 0 ? Object.keys(data[0]) : [];
-              const colCHeader = headers[2]; // Column C is always at index 2
-              
+              const colCHeader = headers[2]; 
               let lastValidDateInSheet = "-";
-
               merged.push(...data.map(row => {
                 const processedRow: RawRow = {};
-                
-                // 1. Identify and process the Date from Column C (at index 2)
                 if (colCHeader) {
                   const rawColCValue = String(row[colCHeader] || "").trim();
                   const normalized = normalizeDateValue(rawColCValue);
-                  
-                  // Forward-fill logic: 
-                  // If normalized value is a real date (has year/month/day), update tracking
-                  // If it's empty, "NIL", or blank, use the last valid date
                   if (normalized && normalized !== "" && normalized !== "NIL" && normalized.includes('-')) {
                     lastValidDateInSheet = normalized;
                   }
                 }
-
-                // 2. Map all columns exactly from the sheet
                 Object.keys(row).forEach(key => {
-                  if (key === colCHeader) {
-                    // Force the normalized/carried date into Column C
-                    processedRow[key] = lastValidDateInSheet;
-                  } else {
-                    processedRow[key] = row[key];
-                  }
+                  if (key === colCHeader) processedRow[key] = lastValidDateInSheet;
+                  else processedRow[key] = row[key];
                 });
-
-                // Also ensure a standard "Date" key exists for filters/summaries
                 processedRow['Date'] = lastValidDateInSheet;
-
-                // 3. Add internal metadata for summary calculations
-                return { 
-                  ...processedRow, 
-                  '__projectSource': project.name, 
-                  '__projectCategory': project.category, 
-                  '__sheetSource': sname 
-                };
+                return { ...processedRow, '__projectSource': project.name, '__projectCategory': project.category, '__sheetSource': sname };
               }));
             }));
           }
@@ -298,32 +330,44 @@ const App: React.FC = () => {
     sessionStorage.removeItem('ok');
     setIsAuthenticated(false);
     setRawData([]);
-    setProjects([]);
-    setSelectedProdProjectIds([]);
-    setSelectedHourlyProjectIds([]);
-    setSelectedSheetIds([]);
+    setBirthdayMessage('');
   };
 
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
-    const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
-    const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
+    setIsLoading(true);
+    const newProject = { ...p, id: `pid-${Date.now()}`, color: COLORS.chart[projects.length % COLORS.chart.length] };
     const updated = [...projects, newProject];
-    setProjects(updated);
-    await syncProjectsToServer(updated);
+    const success = await saveGlobalProjects(API_URL, updated);
+    if (success) {
+      setProjects(updated);
+      localStorage.setItem('dc_projects_cache', JSON.stringify(updated));
+    }
+    setIsLoading(false);
   };
 
   const updateProject = async (updated: Project) => {
+    setIsLoading(true);
     const newList = projects.map(p => p.id === updated.id ? updated : p);
-    setProjects(newList);
-    await syncProjectsToServer(newList);
+    const success = await saveGlobalProjects(API_URL, newList);
+    if (success) {
+      setProjects(newList);
+      localStorage.setItem('dc_projects_cache', JSON.stringify(newList));
+    }
+    setIsLoading(false);
   };
 
   const deleteProject = async (id: string) => {
+    if (!confirm("Delete this project permanently for all users?")) return;
+    setIsLoading(true);
     const newList = projects.filter(p => p.id !== id);
-    setProjects(newList);
-    setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
-    setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
-    await syncProjectsToServer(newList);
+    const success = await saveGlobalProjects(API_URL, newList);
+    if (success) {
+      setProjects(newList);
+      localStorage.setItem('dc_projects_cache', JSON.stringify(newList));
+      setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
+      setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
+    }
+    setIsLoading(false);
   };
 
   const handleSelectProject = (id: string) => {
@@ -457,7 +501,6 @@ const App: React.FC = () => {
 
   const rawHeaders = useMemo(() => {
     if (rawData.length === 0) return [];
-    // Only return headers that don't start with "__" (internal metadata)
     return Array.from(new Set(rawData.flatMap(row => Object.keys(row))))
       .filter(key => !key.startsWith('__'));
   }, [rawData]);
@@ -519,12 +562,21 @@ const App: React.FC = () => {
       </button>
 
       <main className="flex-1 overflow-auto bg-slate-950 p-6 md:p-10 custom-scrollbar relative">
-        <header className="flex justify-between items-center mb-10 ml-12">
+        <header className="flex justify-between items-start mb-10 ml-12">
           <div className="flex-1">
             <h1 className="text-3xl font-bold text-white tracking-tight">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Overview'}</h1>
             <p className="text-slate-400 text-sm mt-1">Active Projects: <span className="text-violet-400 font-semibold">{selectedSheetIds.length} datasets synchronization live.</span></p>
           </div>
-          <button onClick={handleLogout} className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl transition-all hover:bg-red-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
+          
+          <div className="flex items-center gap-6">
+            {birthdayMessage && (
+              <div className="bg-gradient-to-r from-violet-600/20 to-pink-600/20 border border-violet-500/30 px-6 py-3 rounded-2xl flex items-center gap-3 animate-fade-up shadow-[0_0_20px_rgba(139,92,246,0.1)]">
+                <span className="text-lg animate-bounce">🎈</span>
+                <span className="text-sm font-black tracking-tight shimmer-text">{birthdayMessage}</span>
+              </div>
+            )}
+            <button onClick={handleLogout} className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl transition-all hover:bg-red-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
+          </div>
         </header>
 
         {(isDataLoading || isLoading) && rawData.length === 0 ? (
@@ -563,7 +615,7 @@ const App: React.FC = () => {
       </main>
 
       {showProjectManager && (
-        <ProjectManager projects={projects} activeProjectId={combinedSelectedProjectIds[0] || ''} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
+        <ProjectManager projects={projects} selectedProjectIds={combinedSelectedProjectIds} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
       )}
       {enlargedModal === 'projects-prod' && <SelectionModal title="Production Projects" options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
       {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Projects" options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
