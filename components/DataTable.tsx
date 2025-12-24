@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 
 interface DataTableProps {
@@ -109,6 +110,13 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
         }
       }
 
+      // Explicitly sum specific metrics for summary views
+      if (normHeader === "framecount" || normHeader === "objectcount" || normHeader === "errorcount") {
+        const sum = filteredData.reduce((acc, row) => acc + (Number(row[header]) || 0), 0);
+        results[header] = { value: sum, label: 'Sum', type: 'numeric' };
+        return;
+      }
+
       if (normHeader.includes("videoid")) return;
       if (normHeader.includes("frameid")) {
         const count = filteredData.filter(row => row[header] !== null && row[header] !== undefined && String(row[header]).trim() !== "").length;
@@ -125,7 +133,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     return results;
   }, [filteredData, headers]);
 
-  // Aggregate attendance for the "Grand Totals" label's neighbor cell
+  // Aggregate attendance for the "Grand Totals" footer
   const aggregateAttendance = useMemo(() => {
     let totalPresent = 0;
     let totalAbsent = 0;
@@ -293,44 +301,49 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                   <td key={`foot-${idx}`} className="px-8 py-5 text-sm font-black text-white whitespace-nowrap">
                     {idx === 0 ? (
                       <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-pink-400">GRAND TOTALS</span>
-                    ) : idx === 1 ? (
-                      /* Next to Grand Totals (NAME column): Show Aggregate Attendance across all sheets if applicable */
-                      (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">AGGREGATE (ALL SHEETS)</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span>
-                            <span className="text-emerald-400 tabular-nums">{aggregateAttendance.present}</span>
+                    ) : (
+                      <>
+                        {/* Numerical Totals (frameCount, objectCount, etc) */}
+                        {totals[header] !== undefined ? (
+                          <div className="flex flex-col">
+                            {totals[header].label && totals[header].type !== 'attendance' && (
+                              <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">{totals[header].label}</span>
+                            )}
+                            {totals[header].type === 'attendance' ? (
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span>
+                                  <span className="text-emerald-400 tabular-nums">{totals[header].value.present}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span>
+                                  <span className="text-rose-400 tabular-nums">{totals[header].value.absent}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-violet-400 tabular-nums">
+                                {totals[header].value.toLocaleString()}
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span>
-                            <span className="text-rose-400 tabular-nums">{aggregateAttendance.absent}</span>
-                          </div>
-                        </div>
-                      ) : null
-                    ) : (totals[header] !== undefined ? (
-                      <div className="flex flex-col">
-                        {totals[header].label && totals[header].type !== 'attendance' && (
-                          <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">{totals[header].label}</span>
-                        )}
-                        {totals[header].type === 'attendance' ? (
-                          <div className="flex flex-col gap-0.5">
+                        ) : null}
+
+                        {/* Aggregate Attendance Label (only for column index 1 if attendance is active) */}
+                        {idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) && (
+                          <div className="flex flex-col gap-0.5 mt-1 border-t border-slate-700 pt-1">
+                            <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">ALL SHEETS AGGR.</span>
                             <div className="flex items-center gap-1.5">
                               <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span>
-                              <span className="text-emerald-400 tabular-nums">{totals[header].value.present}</span>
+                              <span className="text-emerald-400 tabular-nums">{aggregateAttendance.present}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span>
-                              <span className="text-rose-400 tabular-nums">{totals[header].value.absent}</span>
+                              <span className="text-rose-400 tabular-nums">{aggregateAttendance.absent}</span>
                             </div>
                           </div>
-                        ) : (
-                          <span className="text-violet-400 tabular-nums">
-                            {totals[header].value.toLocaleString()}
-                          </span>
                         )}
-                      </div>
-                    ) : null)}
+                      </>
+                    )}
                   </td>
                 ))}
               </tr>

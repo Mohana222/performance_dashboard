@@ -115,21 +115,17 @@ const App: React.FC = () => {
     await saveGlobalProjects(API_URL, updatedProjects);
   }, []);
 
-  // Secure Load: Fetch projects from the master database spreadsheet
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
         setIsLoading(true);
         const globalProjects = await fetchGlobalProjects(API_URL);
-        
         if (globalProjects === null) {
           console.warn("Could not sync with project database. Using local state if available.");
         } else if (globalProjects.length === 0) {
-          // Genuinely empty: Seed with the requested production and hourly sheets
           setProjects(SEED_PROJECTS);
           await saveGlobalProjects(API_URL, SEED_PROJECTS);
         } else {
-          // Successful fetch from master DB: Sync for all users
           setProjects(globalProjects);
         }
         setIsLoading(false);
@@ -148,17 +144,12 @@ const App: React.FC = () => {
           if (project) {
             const list = await getSheetList(project.url);
             list.forEach(sheetName => {
-              const isHourly = project.category === 'hourly';
-              const isProduction = project.category === 'production';
               const sNameLower = sheetName.toLowerCase();
-              
-              if (isHourly) {
-                // Hourly filter: must have 'login' and NOT 'credential'
+              if (project.category === 'hourly') {
                 if (sNameLower.includes('login') && !sNameLower.includes('credential')) {
                   allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
                 }
-              } else if (isProduction) {
-                // Production filter: only sheets containing 'production' or 'qc'
+              } else if (project.category === 'production') {
                 if (sNameLower.includes('production') || sNameLower.includes('qc')) {
                   allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
                 }
@@ -192,44 +183,46 @@ const App: React.FC = () => {
           if (project) {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
-              const keys = data.length > 0 ? Object.keys(data[0]) : [];
+              const headers = data.length > 0 ? Object.keys(data[0]) : [];
+              const isProduction = project.category === 'production';
               
-              // For production/qc sheets, strictly extract date from Column C (index 2)
-              const isProductionCategory = project.category === 'production';
-              const sourceDateKey = isProductionCategory ? keys[2] : findKey(keys, "Date");
-              
+              // Column C is always Index 2 in these spreadsheets.
+              const colCHeader = headers[2]; 
+              let lastValidDate = '-';
+
               merged.push(...data.map(row => {
                 const processedRow = { ...row };
                 
-                // Extract and format ONLY the targeted date column
-                if (sourceDateKey && processedRow[sourceDateKey]) {
-                  const d = new Date(processedRow[sourceDateKey] as any);
-                  if (!isNaN(d.getTime())) {
-                    const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                    
-                    // Update the source column in place
-                    processedRow[sourceDateKey] = formattedDate;
-                    
-                    // Ensure a key named 'Date' exists for the dashboard filters if it wasn't the target
-                    if (sourceDateKey !== 'Date') {
-                        processedRow['Date'] = formattedDate;
+                // For Production spreadsheets, strictly process Column C for date
+                if (isProduction && colCHeader) {
+                  const rawVal = String(processedRow[colCHeader] || '').trim();
+                  
+                  if (rawVal && rawVal !== "" && rawVal !== "undefined" && rawVal !== "null") {
+                    const d = new Date(rawVal);
+                    if (!isNaN(d.getTime())) {
+                      // Fix: Use local date components instead of UTC/ISO to prevent "one day off" error
+                      const year = d.getFullYear();
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const day = String(d.getDate()).padStart(2, '0');
+                      const formatted = `${year}-${month}-${day}`;
+                      
+                      processedRow[colCHeader] = formatted;
+                      processedRow['Date'] = formatted;
+                      lastValidDate = formatted; // Remember this date for next rows
                     }
+                  } else {
+                    // Forward-fill: If Column C is empty, use the last valid date found in this sheet
+                    processedRow[colCHeader] = lastValidDate;
+                    processedRow['Date'] = lastValidDate;
                   }
                 }
-                
-                // Remove other date-like columns if they aren't the primary source to avoid confusion
-                // as per the requirement "dates from any other column must be ignored".
-                if (isProductionCategory) {
-                    keys.forEach(k => {
-                        if (k !== sourceDateKey && k !== 'Date' && findKey([k], "Date")) {
-                            // Instead of deleting (which might break other summary logic), 
-                            // we just don't treat them as dates. 
-                            // Currently the requirement is about "extracting the column C date".
-                        }
-                    });
-                }
 
-                return { ...processedRow, 'Project Source': project.name, 'Project Category': project.category, 'Sheet Source': sname };
+                return { 
+                  ...processedRow, 
+                  'Project Source': project.name, 
+                  'Project Category': project.category, 
+                  'Sheet Source': sname 
+                };
               }));
             }));
           }
@@ -247,7 +240,6 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setLoginError('');
-    
     try {
       const res = await apiLogin(API_URL, username, password);
       if (res.success) {
@@ -307,25 +299,22 @@ const App: React.FC = () => {
 
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
-    const keys = Object.keys(rawData[0]);
-    const kAnn = findKey(keys, "Annotator Name"), kUser = findKey(keys, "UserName"), kFrame = findKey(keys, "Frame ID"), kObj = findKey(keys, "Number of Object Annotated"), kQC = findKey(keys, "Internal QC Name"), kErr = findKey(keys, "Internal Polygon Error Count");
+    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
     const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const userMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
     const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
     const combinedPerformanceMap: Record<string, { objects: number }> = {};
-    
     const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {}, uniqueSheetNames = new Set<string>();
-    
+
     rawData.forEach(row => {
       const category = row['Project Category'], sheetSource = String(row['Sheet Source'] || '');
       const isQcSheet = sheetSource.toLowerCase().includes('qc');
 
       if (category === 'production') {
-        // Clean name by removing domain if it exists
         const cleanRawName = (val: any) => String(val || '').trim().replace(/@rprocess\.in/gi, '');
-        
         const ann = cleanRawName(row[kAnn || ''] || row[kUser || '']);
         const user = cleanRawName(row[kUser || '']);
         const frameId = String(row[kFrame || ''] || '').trim();
@@ -333,27 +322,21 @@ const App: React.FC = () => {
         const qcName = String(row[kQC || ''] || '').trim();
         const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
 
-        // General performance mapping
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (frameId) annotatorMap[ann].frameSet.add(frameId);
           annotatorMap[ann].objects += objCount;
-          
           const isQCed = qcName !== "" || (kErr && row[kErr] !== undefined && row[kErr] !== null);
-          // Only populate Quality Maps if it's NOT a 'QC' specific sheet (as requested)
-          // to prevent "QC sheets" from affecting the quality bar chart leaderboard.
           if (isQCed && !isQcSheet) {
              if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 };
              qcAnnMap[ann].objects += objCount;
              qcAnnMap[ann].errors += errCount;
           }
         }
-        
         if (user) {
           if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
           if (frameId) userMap[user].frameSet.add(frameId);
           userMap[user].objects += objCount;
-          
           const isQCed = qcName !== "" || (kErr && row[kErr] !== undefined && row[kErr] !== null);
           if (isQCed && !isQcSheet) {
              if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 };
@@ -361,7 +344,6 @@ const App: React.FC = () => {
              qcUserMap[user].errors += errCount;
           }
         }
-
         const primaryName = ann || user;
         if (primaryName) {
           if (!combinedPerformanceMap[primaryName]) combinedPerformanceMap[primaryName] = { objects: 0 };
@@ -404,7 +386,9 @@ const App: React.FC = () => {
   }, [rawData]);
 
   const metrics = useMemo(() => {
-    const prodData = rawData.filter(r => r['Project Category'] === 'production'), globalFrames = new Set<string>(), keys = prodData.length > 0 ? Object.keys(prodData[0]) : [], kFrame = findKey(keys, "Frame ID");
+    const prodData = rawData.filter(r => r['Project Category'] === 'production'), globalFrames = new Set<string>();
+    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    const kFrame = findKey(allKeys, "Frame ID");
     prodData.forEach(r => { const f = String(r[kFrame || ''] || '').trim(); if (f) globalFrames.add(f); });
     const totalObjects = processedSummaries.annotators.reduce((acc, cur) => acc + cur.objectCount, 0), qcObjectsCount = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.objectCount, 0), totalErrors = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.errorCount, 0);
     return [
@@ -422,20 +406,21 @@ const App: React.FC = () => {
       .map(a => ({ name: a.name, value: a.objectCount }));
   }, [processedSummaries]);
 
-  // Dynamic pie chart title based on selected sheet names
   const pieChartTitle = useMemo(() => {
     if (selectedSheetIds.length === 0) return "Overall Performance";
-    
     const names = selectedSheetIds.map(id => id.split('|')[1]?.toLowerCase() || '');
     const hasQC = names.some(n => n.includes('qc'));
     const hasProd = names.some(n => n.includes('production'));
-    
     if (hasQC && !hasProd) return "Overall QC Performance";
     if (hasProd && !hasQC) return "Overall Annotator Performance";
     if (hasQC && hasProd) return "Overall Combined Performance";
-    
     return "Overall Performance";
   }, [selectedSheetIds]);
+
+  const rawHeaders = useMemo(() => {
+    if (rawData.length === 0) return [];
+    return Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+  }, [rawData]);
 
   if (!isAuthenticated) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -445,51 +430,20 @@ const App: React.FC = () => {
           <div className="inline-block px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-black tracking-widest uppercase mb-4">Secure Portal</div>
           <h1 className="text-5xl font-black tracking-tighter shimmer-text py-2">DesiCrew</h1>
         </div>
-
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-4">
             <div className="relative group">
               <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-focus-within:text-violet-400 transition-colors">👤</span>
-              <input 
-                type="text" 
-                placeholder="Username" 
-                required 
-                className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
-                value={username} 
-                onChange={e => setUsername(e.target.value)} 
-              />
+              <input type="text" placeholder="Username" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-5 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" value={username} onChange={e => setUsername(e.target.value)} />
             </div>
             <div className="relative group">
               <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-focus-within:text-violet-400 transition-colors">🔒</span>
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                placeholder="Password" 
-                required 
-                className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-12 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-              />
-              <button 
-                type="button" 
-                onClick={() => setShowPassword(!showPassword)} 
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none text-lg"
-              >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
-              </button>
+              <input type={showPassword ? 'text' : 'password'} placeholder="Password" required className="w-full bg-slate-900/60 border border-slate-800/80 text-white pl-12 pr-12 py-4 rounded-2xl focus:ring-2 focus:ring-violet-500/50 outline-none transition-all placeholder-slate-600 font-medium" value={password} onChange={e => setPassword(e.target.value)} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-violet-400 transition-colors focus:outline-none text-lg">{showPassword ? '👁️' : '👁️‍🗨️'}</button>
             </div>
           </div>
-          {loginError && (
-            <div className="text-rose-400 text-xs font-bold text-center animate-pulse py-2 px-4 bg-rose-500/10 rounded-xl border border-rose-500/20">
-              {loginError}
-            </div>
-          )}
-          <button 
-            type="submit" 
-            disabled={isLoading} 
-            className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-[10px] uppercase tracking-[0.2em]"
-          >
-            {isLoading ? 'Processing...' : 'Access Dashboard'}
-          </button>
+          {loginError && <div className="text-rose-400 text-xs font-bold text-center animate-pulse py-2 px-4 bg-rose-500/10 rounded-xl border border-rose-500/20">{loginError}</div>}
+          <button type="submit" disabled={isLoading} className="w-full h-14 bg-gradient-to-r from-violet-600 to-violet-500 text-white font-black rounded-2xl shadow-xl active:scale-95 disabled:opacity-50 text-[10px] uppercase tracking-[0.2em]">{isLoading ? 'Processing...' : 'Access Dashboard'}</button>
         </form>
       </div>
       <div className="mt-auto w-full max-w-md relative z-10"><InfoFooter /></div>
@@ -556,7 +510,7 @@ const App: React.FC = () => {
                     </div>
                   </>
                 )}
-                {currentView === 'raw' && <DataTable title="Consolidated Raw Data" headers={Object.keys(rawData[0] || {})} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'Date', 'Project Category']} />}
+                {currentView === 'raw' && <DataTable title="Consolidated Raw Data" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'Date', 'Project Category']} />}
                 {currentView === 'annotator' && <DataTable title="Annotator Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
                 {currentView === 'username' && <DataTable title="Username Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
                 {currentView === 'qc-user' && <DataTable title="QA (Username)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
@@ -569,16 +523,7 @@ const App: React.FC = () => {
       </main>
 
       {showProjectManager && (
-        <ProjectManager 
-          projects={projects} 
-          activeProjectId={combinedSelectedProjectIds[0] || ''} 
-          userRole="desicrew"
-          onAdd={addProject} 
-          onUpdate={updateProject} 
-          onDelete={deleteProject} 
-          onSelect={handleSelectProject} 
-          onClose={() => setShowProjectManager(false)} 
-        />
+        <ProjectManager projects={projects} activeProjectId={combinedSelectedProjectIds[0] || ''} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
       )}
       {enlargedModal === 'projects-prod' && <SelectionModal title="Production Projects" options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
       {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Projects" options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
