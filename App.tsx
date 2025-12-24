@@ -17,7 +17,7 @@ const SEED_PROJECTS: Project[] = [
   {
     id: 'dc-ramp-prod-dec-2025',
     name: 'Production Tracker Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbybBF1xbbUHCr2kTlLvVCdtc2UVGZKzLQasRNf_0pwwFSImsHo0f1Nq5fp56nJhJ45Z/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyssLJjMAm1G5YnUBh-zO_ZcWYbmClA2AtTZP11CJ3lg1pGbM_i-al9XpSmZbtDlZqS/exec',
     color: COLORS.primary,
     category: 'production'
   },
@@ -147,11 +147,13 @@ const App: React.FC = () => {
               const sNameLower = sheetName.toLowerCase();
               if (project.category === 'hourly') {
                 if (sNameLower.includes('login') && !sNameLower.includes('credential')) {
-                  allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
+                  // Removed [Project Name] prefix from label
+                  allSheets.push({ id: `${pid}|${sheetName}`, label: sheetName, projectId: pid, sheetName: sheetName });
                 }
               } else if (project.category === 'production') {
                 if (sNameLower.includes('production') || sNameLower.includes('qc')) {
-                  allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
+                  // Removed [Project Name] prefix from label
+                  allSheets.push({ id: `${pid}|${sheetName}`, label: sheetName, projectId: pid, sheetName: sheetName });
                 }
               }
             });
