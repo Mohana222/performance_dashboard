@@ -16,14 +16,14 @@ import InfoFooter from './components/InfoFooter';
 const SEED_PROJECTS: Project[] = [
   {
     id: 'dc-ramp-prod-dec-2025',
-    name: 'DC <> rAMP - Production Tracker Dec 2025',
+    name: 'Production Tracker Dec 2025',
     url: 'https://script.google.com/macros/s/AKfycbybBF1xbbUHCr2kTlLvVCdtc2UVGZKzLQasRNf_0pwwFSImsHo0f1Nq5fp56nJhJ45Z/exec',
     color: COLORS.primary,
     category: 'production'
   },
   {
     id: 'ramp-hourly-dec-2025',
-    name: 'rAMP - Hourly Tracker_Dec 2025',
+    name: 'Hourly Tracker_Dec 2025',
     url: 'https://script.google.com/macros/s/AKfycbxGEjoJ-e9McSgYWCUS45FDf4Ox_uRtE9cxAMdGWyYSccQieLOuVxntRY93basHQicVKg/exec',
     color: COLORS.secondary,
     category: 'hourly'
