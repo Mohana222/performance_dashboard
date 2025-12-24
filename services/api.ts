@@ -1,3 +1,4 @@
+
 import { RawRow, LoginResponse, SheetListResponse, Project } from '../types';
 
 export const login = async (url: string, username: string, password: string): Promise<LoginResponse> => {
@@ -85,7 +86,9 @@ export const findKey = (keys: string[], targetName: string) => {
     "frameid": ["frameid", "frame", "id", "imageid", "frame_id"],
     "numberofobjectannotated": ["numberofobjectannotated", "objects", "objectcount", "totalobjects", "annotatedobjects", "object_count"],
     "date": ["date", "timestamp", "createdat", "day", "time"],
-    "logintime": ["logintime", "login", "timein", "clockin", "login_time", "starttime"]
+    "logintime": ["logintime", "login", "timein", "clockin", "login_time", "starttime"],
+    "internalqcname": ["internalqcname", "internalqc", "qcname", "qcby", "verifiedby", "qc_name", "qa_name", "qa"],
+    "internalpolygonerrorcount": ["internalpolygonerrorcount", "errorcount", "errors", "polygonerrors", "error_count", "totalerrors", "internal_errors"]
   };
 
   const possibleMatches = aliases[normalizedTarget] || [normalizedTarget];

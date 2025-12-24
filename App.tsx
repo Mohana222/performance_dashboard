@@ -149,9 +149,19 @@ const App: React.FC = () => {
             const list = await getSheetList(project.url);
             list.forEach(sheetName => {
               const isHourly = project.category === 'hourly';
+              const isProduction = project.category === 'production';
               const sNameLower = sheetName.toLowerCase();
-              if (!isHourly || (sNameLower.includes('login') && !sNameLower.includes('credential'))) {
-                allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
+              
+              if (isHourly) {
+                // Hourly filter: must have 'login' and NOT 'credential'
+                if (sNameLower.includes('login') && !sNameLower.includes('credential')) {
+                  allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
+                }
+              } else if (isProduction) {
+                // Production filter: only sheets containing 'production' or 'qc'
+                if (sNameLower.includes('production') || sNameLower.includes('qc')) {
+                  allSheets.push({ id: `${pid}|${sheetName}`, label: `[${project.name}] ${sheetName}`, projectId: pid, sheetName: sheetName });
+                }
               }
             });
           }
@@ -182,13 +192,43 @@ const App: React.FC = () => {
           if (project) {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
-              const dateKey = findKey(data.length > 0 ? Object.keys(data[0]) : [], "Date");
+              const keys = data.length > 0 ? Object.keys(data[0]) : [];
+              
+              // For production/qc sheets, strictly extract date from Column C (index 2)
+              const isProductionCategory = project.category === 'production';
+              const sourceDateKey = isProductionCategory ? keys[2] : findKey(keys, "Date");
+              
               merged.push(...data.map(row => {
                 const processedRow = { ...row };
-                if (dateKey && processedRow[dateKey]) {
-                  const d = new Date(processedRow[dateKey] as any);
-                  if (!isNaN(d.getTime())) processedRow[dateKey] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                
+                // Extract and format ONLY the targeted date column
+                if (sourceDateKey && processedRow[sourceDateKey]) {
+                  const d = new Date(processedRow[sourceDateKey] as any);
+                  if (!isNaN(d.getTime())) {
+                    const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    
+                    // Update the source column in place
+                    processedRow[sourceDateKey] = formattedDate;
+                    
+                    // Ensure a key named 'Date' exists for the dashboard filters if it wasn't the target
+                    if (sourceDateKey !== 'Date') {
+                        processedRow['Date'] = formattedDate;
+                    }
+                  }
                 }
+                
+                // Remove other date-like columns if they aren't the primary source to avoid confusion
+                // as per the requirement "dates from any other column must be ignored".
+                if (isProductionCategory) {
+                    keys.forEach(k => {
+                        if (k !== sourceDateKey && k !== 'Date' && findKey([k], "Date")) {
+                            // Instead of deleting (which might break other summary logic), 
+                            // we just don't treat them as dates. 
+                            // Currently the requirement is about "extracting the column C date".
+                        }
+                    });
+                }
+
                 return { ...processedRow, 'Project Source': project.name, 'Project Category': project.category, 'Sheet Source': sname };
               }));
             }));
@@ -280,26 +320,46 @@ const App: React.FC = () => {
     
     rawData.forEach(row => {
       const category = row['Project Category'], sheetSource = String(row['Sheet Source'] || '');
+      const isQcSheet = sheetSource.toLowerCase().includes('qc');
+
       if (category === 'production') {
-        const ann = String(row[kAnn || ''] || '').trim();
-        const user = String(row[kUser || ''] || '').trim();
+        // Clean name by removing domain if it exists
+        const cleanRawName = (val: any) => String(val || '').trim().replace(/@rprocess\.in/gi, '');
+        
+        const ann = cleanRawName(row[kAnn || ''] || row[kUser || '']);
+        const user = cleanRawName(row[kUser || '']);
         const frameId = String(row[kFrame || ''] || '').trim();
         const objCount = parseFloat(String(row[kObj || ''] || '0')) || 0;
         const qcName = String(row[kQC || ''] || '').trim();
         const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
 
+        // General performance mapping
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (frameId) annotatorMap[ann].frameSet.add(frameId);
           annotatorMap[ann].objects += objCount;
-          if (qcName) { if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 }; qcAnnMap[ann].objects += objCount; qcAnnMap[ann].errors += errCount; }
+          
+          const isQCed = qcName !== "" || (kErr && row[kErr] !== undefined && row[kErr] !== null);
+          // Only populate Quality Maps if it's NOT a 'QC' specific sheet (as requested)
+          // to prevent "QC sheets" from affecting the quality bar chart leaderboard.
+          if (isQCed && !isQcSheet) {
+             if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 };
+             qcAnnMap[ann].objects += objCount;
+             qcAnnMap[ann].errors += errCount;
+          }
         }
         
         if (user) {
           if (!userMap[user]) userMap[user] = { frameSet: new Set(), objects: 0 };
           if (frameId) userMap[user].frameSet.add(frameId);
           userMap[user].objects += objCount;
-          if (qcName) { if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 }; qcUserMap[user].objects += objCount; qcUserMap[user].errors += errCount; }
+          
+          const isQCed = qcName !== "" || (kErr && row[kErr] !== undefined && row[kErr] !== null);
+          if (isQCed && !isQcSheet) {
+             if (!qcUserMap[user]) qcUserMap[user] = { objects: 0, errors: 0 };
+             qcUserMap[user].objects += objCount;
+             qcUserMap[user].errors += errCount;
+          }
         }
 
         const primaryName = ann || user;
@@ -361,6 +421,21 @@ const App: React.FC = () => {
       .sort((a,b) => b.objectCount - a.objectCount)
       .map(a => ({ name: a.name, value: a.objectCount }));
   }, [processedSummaries]);
+
+  // Dynamic pie chart title based on selected sheet names
+  const pieChartTitle = useMemo(() => {
+    if (selectedSheetIds.length === 0) return "Overall Performance";
+    
+    const names = selectedSheetIds.map(id => id.split('|')[1]?.toLowerCase() || '');
+    const hasQC = names.some(n => n.includes('qc'));
+    const hasProd = names.some(n => n.includes('production'));
+    
+    if (hasQC && !hasProd) return "Overall QC Performance";
+    if (hasProd && !hasQC) return "Overall Annotator Performance";
+    if (hasQC && hasProd) return "Overall Combined Performance";
+    
+    return "Overall Performance";
+  }, [selectedSheetIds]);
 
   if (!isAuthenticated) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -476,8 +551,8 @@ const App: React.FC = () => {
                   <>
                     <SummaryCards metrics={metrics} />
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                      <div className="lg:col-span-3"><OverallPieChart data={pieData} title="Annotator Performance: Objects" /></div>
-                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcUsers} title="Top Quality Rates" /></div>
+                      <div className="lg:col-span-3"><OverallPieChart data={pieData} title={pieChartTitle} /></div>
+                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcAnn} title="Top Quality Rates" /></div>
                     </div>
                   </>
                 )}

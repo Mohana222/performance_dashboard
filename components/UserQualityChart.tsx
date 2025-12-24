@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { 
   Bar, 
@@ -8,7 +9,8 @@ import {
   Legend, 
   ResponsiveContainer, 
   ComposedChart,
-  Line
+  Line,
+  Cell
 } from 'recharts';
 import { COLORS } from '../constants';
 
@@ -24,16 +26,26 @@ interface UserQualityChartProps {
 }
 
 const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
+  // Sort by a composite score to find the "Top Performers"
+  // Priority: High volume with high quality
   const chartData = useMemo(() => {
-    return [...data]
+    const processed = data
       .filter(u => u.objectCount > 0)
-      .map(u => ({
-        name: u.name,
-        objects: u.objectCount,
-        errors: u.errorCount,
-        quality: Number((((u.objectCount - u.errorCount) / u.objectCount) * 100).toFixed(2))
-      }))
-      .sort((a, b) => b.quality - a.quality)
+      .map(u => {
+        const quality = Number((((u.objectCount - u.errorCount) / Math.max(u.objectCount, 1)) * 100).toFixed(2));
+        return {
+          name: u.name,
+          objects: u.objectCount,
+          errors: u.errorCount,
+          quality: quality,
+          // Composite Score: (Volume weight 40%) * (Quality weight 60%)
+          // This prevents someone with 1 object and 100% quality from beating high-volume pros.
+          score: (u.objectCount) * (quality / 100)
+        };
+      });
+
+    return processed
+      .sort((a, b) => b.score - a.score)
       .slice(0, 3);
   }, [data]);
 
@@ -41,21 +53,21 @@ const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl backdrop-blur-md">
-          <p className="text-white font-bold mb-2">ID: {label}</p>
-          <div className="space-y-1">
-            <p className="text-xs flex justify-between gap-4">
-              <span className="text-slate-400">QC Objects:</span>
-              <span className="text-violet-400 font-mono">{payload[0].value.toLocaleString()}</span>
-            </p>
-            <p className="text-xs flex justify-between gap-4">
-              <span className="text-slate-400">Errors:</span>
-              <span className="text-rose-400 font-mono">{payload[1].value.toLocaleString()}</span>
-            </p>
+          <p className="text-white font-bold mb-2 text-xs">Contributor: {label}</p>
+          <div className="space-y-1.5">
+            <div className="flex justify-between gap-6">
+              <span className="text-[10px] text-slate-400 uppercase font-black">QC Objects:</span>
+              <span className="text-violet-400 font-mono font-bold text-xs">{payload.find((p:any) => p.dataKey === 'objects')?.value.toLocaleString() || 0}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-[10px] text-slate-400 uppercase font-black">Errors:</span>
+              <span className="text-rose-400 font-mono font-bold text-xs">{payload.find((p:any) => p.dataKey === 'errors')?.value.toLocaleString() || 0}</span>
+            </div>
             <div className="mt-2 pt-2 border-t border-slate-800">
-              <p className="text-xs flex justify-between gap-4 font-bold">
-                <span className="text-emerald-400">Quality:</span>
-                <span className="text-emerald-400">{payload[2].value}%</span>
-              </p>
+              <div className="flex justify-between gap-6">
+                <span className="text-[10px] text-emerald-400 uppercase font-black">Quality Rate:</span>
+                <span className="text-emerald-400 font-mono font-bold text-xs">{payload.find((p:any) => p.dataKey === 'quality')?.value}%</span>
+              </div>
             </div>
           </div>
         </div>
@@ -70,75 +82,95 @@ const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
       
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse"></span>
           {title}
         </h3>
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">
-          Top 3 Quality Rates
+          High Performance Quality Check
         </span>
       </div>
 
       <div className="flex-1 min-h-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-            <XAxis 
-              dataKey="name" 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} 
-              dy={10}
-            />
-            <YAxis 
-              yAxisId="left"
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: '#64748b', fontSize: 10 }} 
-            />
-            <YAxis 
-              yAxisId="right" 
-              orientation="right" 
-              domain={[0, 100]} 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: '#10b981', fontSize: 10, fontWeight: 700 }}
-              unit="%"
-            />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b', opacity: 0.4 }} />
-            <Legend 
-              verticalAlign="top" 
-              align="right" 
-              wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', fontSize: '10px', fontWeight: 800 }}
-            />
-            
-            <Bar 
-              yAxisId="left" 
-              dataKey="objects" 
-              name="QC Objects" 
-              fill={COLORS.primary} 
-              radius={[4, 4, 0, 0]} 
-              barSize={20} 
-            />
-            <Bar 
-              yAxisId="left" 
-              dataKey="errors" 
-              name="Total Errors" 
-              fill={COLORS.danger} 
-              radius={[4, 4, 0, 0]} 
-              barSize={20} 
-            />
-            <Line 
-              yAxisId="right" 
-              type="monotone" 
-              dataKey="quality" 
-              name="Quality Rate" 
-              stroke="#10b981" 
-              strokeWidth={3} 
-              dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#0f172a' }}
-              activeDot={{ r: 6, strokeWidth: 0 }}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+        {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.5} />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} 
+                interval={0}
+                dy={15}
+              />
+              <YAxis 
+                yAxisId="left"
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#64748b', fontSize: 10 }} 
+                width={40}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right" 
+                domain={[0, 100]} 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#10b981', fontSize: 10, fontWeight: 700 }}
+                unit="%"
+                width={40}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b', opacity: 0.2 }} />
+              <Legend 
+                verticalAlign="top" 
+                align="right" 
+                iconType="circle"
+                wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}
+              />
+              
+              <Bar 
+                yAxisId="left" 
+                dataKey="objects" 
+                name="QC Objects" 
+                fill={COLORS.primary} 
+                radius={[6, 6, 0, 0]} 
+                barSize={32} 
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fillOpacity={0.8} />
+                ))}
+              </Bar>
+              <Bar 
+                yAxisId="left" 
+                dataKey="errors" 
+                name="Total Errors" 
+                fill={COLORS.danger} 
+                radius={[6, 6, 0, 0]} 
+                barSize={32} 
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-err-${index}`} fillOpacity={0.8} />
+                ))}
+              </Bar>
+              <Line 
+                yAxisId="right" 
+                type="monotone" 
+                dataKey="quality" 
+                name="Quality Rate" 
+                stroke="#10b981" 
+                strokeWidth={4} 
+                dot={{ r: 6, fill: '#10b981', strokeWidth: 3, stroke: '#0f172a' }}
+                activeDot={{ r: 8, strokeWidth: 0 }}
+                animationDuration={1500}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center opacity-20 text-center space-y-2">
+            <span className="text-4xl">📉</span>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Insufficient Data for QA Chart</p>
+          </div>
+        )}
       </div>
     </div>
   );
