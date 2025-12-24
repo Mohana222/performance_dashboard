@@ -12,7 +12,6 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-// Seed projects including both the requested Production and Hourly trackers
 const SEED_PROJECTS: Project[] = [
   {
     id: 'dc-ramp-prod-dec-2025',
@@ -50,6 +49,32 @@ const parseTimeToMinutes = (val: any): number | null => {
     return hours * 60 + minutes;
   }
   return null;
+};
+
+/**
+ * Specifically normalizes MM/DD/YYYY text to YYYY-MM-DD
+ */
+const normalizeDateValue = (val: any): string => {
+  if (!val) return "";
+  const s = String(val).trim();
+  // Match MM/DD/YYYY or M/D/YYYY
+  const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const match = s.match(dateRegex);
+  if (match) {
+    const month = match[1].padStart(2, '0');
+    const day = match[2].padStart(2, '0');
+    const year = match[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Fallback for other potential date formats (like ISO) to keep them clean
+  const d = new Date(s);
+  if (!isNaN(d.getTime()) && s.includes('-')) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return s;
 };
 
 const parseSheetDate = (sheetName: string): number => {
@@ -109,7 +134,6 @@ const App: React.FC = () => {
   const combinedSelectedProjectIds = useMemo(() => [...selectedProdProjectIds, ...selectedHourlyProjectIds], [selectedProdProjectIds, selectedHourlyProjectIds]);
   const [availableSheets, setAvailableSheets] = useState<{ id: string; label: string; projectId: string; sheetName: string }[]>([]);
 
-  // Group sheets by project for separate views in selection interfaces
   const groupedSheetsForUI = useMemo(() => {
     return combinedSelectedProjectIds.map(pid => {
       const project = projects.find(p => p.id === pid);
@@ -161,12 +185,10 @@ const App: React.FC = () => {
               const sNameLower = sheetName.toLowerCase();
               if (project.category === 'hourly') {
                 if (sNameLower.includes('login') && !sNameLower.includes('credential')) {
-                  // Removed [Project Name] prefix from label
                   allSheets.push({ id: `${pid}|${sheetName}`, label: sheetName, projectId: pid, sheetName: sheetName });
                 }
               } else if (project.category === 'production') {
                 if (sNameLower.includes('production') || sNameLower.includes('qc')) {
-                  // Removed [Project Name] prefix from label
                   allSheets.push({ id: `${pid}|${sheetName}`, label: sheetName, projectId: pid, sheetName: sheetName });
                 }
               }
@@ -200,44 +222,45 @@ const App: React.FC = () => {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
               const headers = data.length > 0 ? Object.keys(data[0]) : [];
-              const isProduction = project.category === 'production';
+              const colCHeader = headers[2]; // Column C is always at index 2
               
-              // Column C is always Index 2 in these spreadsheets.
-              const colCHeader = headers[2]; 
-              let lastValidDate = '-';
+              let lastValidDateInSheet = "-";
 
               merged.push(...data.map(row => {
-                const processedRow = { ...row };
+                const processedRow: RawRow = {};
                 
-                // For Production spreadsheets, strictly process Column C for date
-                if (isProduction && colCHeader) {
-                  const rawVal = String(processedRow[colCHeader] || '').trim();
+                // 1. Identify and process the Date from Column C (at index 2)
+                if (colCHeader) {
+                  const rawColCValue = String(row[colCHeader] || "").trim();
+                  const normalized = normalizeDateValue(rawColCValue);
                   
-                  if (rawVal && rawVal !== "" && rawVal !== "undefined" && rawVal !== "null") {
-                    const d = new Date(rawVal);
-                    if (!isNaN(d.getTime())) {
-                      // Fix: Use local date components instead of UTC/ISO to prevent "one day off" error
-                      const year = d.getFullYear();
-                      const month = String(d.getMonth() + 1).padStart(2, '0');
-                      const day = String(d.getDate()).padStart(2, '0');
-                      const formatted = `${year}-${month}-${day}`;
-                      
-                      processedRow[colCHeader] = formatted;
-                      processedRow['Date'] = formatted;
-                      lastValidDate = formatted; // Remember this date for next rows
-                    }
-                  } else {
-                    // Forward-fill: If Column C is empty, use the last valid date found in this sheet
-                    processedRow[colCHeader] = lastValidDate;
-                    processedRow['Date'] = lastValidDate;
+                  // Forward-fill logic: 
+                  // If normalized value is a real date (has year/month/day), update tracking
+                  // If it's empty, "NIL", or blank, use the last valid date
+                  if (normalized && normalized !== "" && normalized !== "NIL" && normalized.includes('-')) {
+                    lastValidDateInSheet = normalized;
                   }
                 }
 
+                // 2. Map all columns exactly from the sheet
+                Object.keys(row).forEach(key => {
+                  if (key === colCHeader) {
+                    // Force the normalized/carried date into Column C
+                    processedRow[key] = lastValidDateInSheet;
+                  } else {
+                    processedRow[key] = row[key];
+                  }
+                });
+
+                // Also ensure a standard "Date" key exists for filters/summaries
+                processedRow['Date'] = lastValidDateInSheet;
+
+                // 3. Add internal metadata for summary calculations
                 return { 
                   ...processedRow, 
-                  'Project Source': project.name, 
-                  'Project Category': project.category, 
-                  'Sheet Source': sname 
+                  '__projectSource': project.name, 
+                  '__projectCategory': project.category, 
+                  '__sheetSource': sname 
                 };
               }));
             }));
@@ -326,7 +349,7 @@ const App: React.FC = () => {
     const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {}, uniqueSheetNames = new Set<string>();
 
     rawData.forEach(row => {
-      const category = row['Project Category'], sheetSource = String(row['Sheet Source'] || '');
+      const category = row['__projectCategory'], sheetSource = String(row['__sheetSource'] || '');
       const isQcSheet = sheetSource.toLowerCase().includes('qc');
 
       if (category === 'production') {
@@ -402,7 +425,7 @@ const App: React.FC = () => {
   }, [rawData]);
 
   const metrics = useMemo(() => {
-    const prodData = rawData.filter(r => r['Project Category'] === 'production'), globalFrames = new Set<string>();
+    const prodData = rawData.filter(r => r['__projectCategory'] === 'production'), globalFrames = new Set<string>();
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
     const kFrame = findKey(allKeys, "Frame ID");
     prodData.forEach(r => { const f = String(r[kFrame || ''] || '').trim(); if (f) globalFrames.add(f); });
@@ -429,13 +452,14 @@ const App: React.FC = () => {
     const hasProd = names.some(n => n.includes('production'));
     if (hasQC && !hasProd) return "Overall QC Performance";
     if (hasProd && !hasQC) return "Overall Annotator Performance";
-    if (hasQC && hasProd) return "Overall Combined Performance";
     return "Overall Performance";
   }, [selectedSheetIds]);
 
   const rawHeaders = useMemo(() => {
     if (rawData.length === 0) return [];
-    return Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    // Only return headers that don't start with "__" (internal metadata)
+    return Array.from(new Set(rawData.flatMap(row => Object.keys(row))))
+      .filter(key => !key.startsWith('__'));
   }, [rawData]);
 
   if (!isAuthenticated) return (
