@@ -1,5 +1,11 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
+
+interface GroupedOption {
+  title: string;
+  color?: string;
+  options: string[];
+}
 
 interface SelectionModalProps {
   title: string;
@@ -8,9 +14,10 @@ interface SelectionModalProps {
   onChange: (selected: string[]) => void;
   labels?: Record<string, string>;
   onClose: () => void;
+  groups?: GroupedOption[];
 }
 
-const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selected, onChange, labels, onClose }) => {
+const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selected, onChange, labels, onClose, groups }) => {
   const toggleSelection = (option: string) => {
     if (selected.includes(option)) {
       onChange(selected.filter(s => s !== option));
@@ -21,6 +28,12 @@ const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selecte
 
   const selectAll = () => onChange(options);
   const deselectAll = () => onChange([]);
+
+  // If no groups are provided, treat all as one flat list
+  const displayGroups = useMemo(() => {
+    if (groups && groups.length > 0) return groups;
+    return [{ title: 'Available Sources', options: options }];
+  }, [groups, options]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8 bg-slate-950/90 backdrop-blur-md">
@@ -53,35 +66,48 @@ const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selecte
           </div>
         </div>
 
-        {/* Grid Content */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-950/30">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {options.map(option => (
-              <button
-                key={option}
-                onClick={() => toggleSelection(option)}
-                className={`flex flex-col items-start p-6 rounded-3xl border-2 transition-all group text-left min-h-[140px] justify-between ${
-                  selected.includes(option)
-                    ? 'bg-violet-600 border-violet-400 text-white shadow-xl ring-2 ring-violet-500/20'
-                    : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-800 shadow-inner'
-                }`}
-              >
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-4 transition-all flex-shrink-0 ${
-                  selected.includes(option) ? 'bg-white text-violet-600 scale-110 shadow-lg' : 'bg-slate-800 border border-slate-700'
-                }`}>
-                  {selected.includes(option) ? <span className="font-black text-sm">✓</span> : ''}
-                </div>
-                <div className="w-full">
-                  <span className={`block font-black text-sm mb-1 break-words leading-tight ${selected.includes(option) ? 'text-white' : 'text-slate-100'}`}>
-                    {labels ? labels[option] : option}
-                  </span>
-                  <span className={`text-[10px] font-bold uppercase tracking-widest ${selected.includes(option) ? 'text-violet-200' : 'text-slate-500'}`}>
-                    {selected.includes(option) ? 'Sync Enabled' : 'Inactive Source'}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+        {/* Grouped Grid Content */}
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-950/30 space-y-12">
+          {displayGroups.map((group, gIdx) => (
+            <div key={gIdx} className="space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="h-[1px] flex-1 bg-slate-800/50"></div>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400 flex items-center gap-3">
+                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color || '#8B5CF6' }}></span>
+                   {group.title}
+                </h3>
+                <div className="h-[1px] flex-1 bg-slate-800/50"></div>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {group.options.map(option => (
+                  <button
+                    key={option}
+                    onClick={() => toggleSelection(option)}
+                    className={`flex flex-col items-start p-6 rounded-3xl border-2 transition-all group text-left min-h-[140px] justify-between ${
+                      selected.includes(option)
+                        ? 'bg-violet-600 border-violet-400 text-white shadow-xl ring-2 ring-violet-500/20'
+                        : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-800 shadow-inner'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-4 transition-all flex-shrink-0 ${
+                      selected.includes(option) ? 'bg-white text-violet-600 scale-110 shadow-lg' : 'bg-slate-800 border border-slate-700'
+                    }`}>
+                      {selected.includes(option) ? <span className="font-black text-sm">✓</span> : ''}
+                    </div>
+                    <div className="w-full">
+                      <span className={`block font-black text-sm mb-1 break-words leading-tight ${selected.includes(option) ? 'text-white' : 'text-slate-100'}`}>
+                        {labels ? labels[option] : option}
+                      </span>
+                      <span className={`text-[10px] font-bold uppercase tracking-widest ${selected.includes(option) ? 'text-violet-200' : 'text-slate-500'}`}>
+                        {selected.includes(option) ? 'Sync Enabled' : 'Inactive Source'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
           
           {options.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">

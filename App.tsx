@@ -108,6 +108,20 @@ const App: React.FC = () => {
 
   const combinedSelectedProjectIds = useMemo(() => [...selectedProdProjectIds, ...selectedHourlyProjectIds], [selectedProdProjectIds, selectedHourlyProjectIds]);
   const [availableSheets, setAvailableSheets] = useState<{ id: string; label: string; projectId: string; sheetName: string }[]>([]);
+
+  // Group sheets by project for separate views in selection interfaces
+  const groupedSheetsForUI = useMemo(() => {
+    return combinedSelectedProjectIds.map(pid => {
+      const project = projects.find(p => p.id === pid);
+      const sheets = availableSheets.filter(s => s.projectId === pid).map(s => s.id);
+      return {
+        title: project?.name || 'Unknown Project',
+        color: project?.color,
+        options: sheets
+      };
+    }).filter(g => g.options.length > 0);
+  }, [combinedSelectedProjectIds, availableSheets, projects]);
+
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
@@ -468,7 +482,7 @@ const App: React.FC = () => {
           <div className="space-y-6">
             <MultiSelect options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} title="Select Spreadsheets (Production)" onEnlarge={() => setEnlargedModal('projects-prod')} />
             <MultiSelect options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} title="Select Spreadsheets (Hourly)" onEnlarge={() => setEnlargedModal('projects-hourly')} />
-            {combinedSelectedProjectIds.length > 0 && <MultiSelect options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} title="Select Data Sheets" onEnlarge={() => setEnlargedModal('sheets')} />}
+            {combinedSelectedProjectIds.length > 0 && <MultiSelect options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} title="Select Data Sheets" onEnlarge={() => setEnlargedModal('sheets')} groups={groupedSheetsForUI} />}
           </div>
         </div>
         <div className="p-8 bg-slate-900 border-t border-slate-800 min-w-[24rem]">
@@ -483,8 +497,8 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-auto bg-slate-950 p-6 md:p-10 custom-scrollbar relative">
         <header className="flex justify-between items-center mb-10 ml-12">
           <div className="flex-1">
-            <h1 className="text-4xl font-black text-white tracking-tighter">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Dashboard'}</h1>
-            <p className="text-slate-500 text-sm mt-1">Active Projects: <span className="text-violet-400 font-bold">{selectedSheetIds.length}</span> datasets synchronization live.</p>
+            <h1 className="text-3xl font-bold text-white tracking-tight">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Overview'}</h1>
+            <p className="text-slate-400 text-sm mt-1">Active Projects: <span className="text-violet-400 font-semibold">{selectedSheetIds.length} datasets synchronization live.</span></p>
           </div>
           <button onClick={handleLogout} className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl transition-all hover:bg-red-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
         </header>
@@ -492,14 +506,14 @@ const App: React.FC = () => {
         {(isDataLoading || isLoading) && rawData.length === 0 ? (
           <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
             <div className="w-20 h-20 border-8 border-violet-600/10 border-t-violet-600 rounded-full animate-spin"></div>
-            <h3 className="text-white font-bold text-xl">Connecting Portal...</h3>
+            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting Data Matrix...</h3>
           </div>
         ) : (
           <div className="space-y-10 pb-20">
             {combinedSelectedProjectIds.length === 0 || selectedSheetIds.length === 0 ? (
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>
-                <h3 className="text-slate-400 font-bold text-lg">No Active Data Sources</h3>
+                <h3 className="text-slate-400 font-bold text-lg uppercase tracking-widest">No Active Data Sources</h3>
               </div>
             ) : (
               <>
@@ -512,7 +526,7 @@ const App: React.FC = () => {
                     </div>
                   </>
                 )}
-                {currentView === 'raw' && <DataTable title="Consolidated Raw Data" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'Date', 'Project Category']} />}
+                {currentView === 'raw' && <DataTable title="Consolidated Intelligence" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'Date', 'Project Category']} />}
                 {currentView === 'annotator' && <DataTable title="Annotator Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
                 {currentView === 'username' && <DataTable title="Username Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
                 {currentView === 'qc-user' && <DataTable title="QA (Username)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
@@ -529,7 +543,7 @@ const App: React.FC = () => {
       )}
       {enlargedModal === 'projects-prod' && <SelectionModal title="Production Projects" options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
       {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Projects" options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
-      {enlargedModal === 'sheets' && <SelectionModal title="Data Sheet Selection" options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} onClose={() => setEnlargedModal(null)} />}
+      {enlargedModal === 'sheets' && <SelectionModal title="Data Sheet Selection" options={availableSheets.map(s => s.id)} selected={selectedSheetIds} onChange={setSelectedSheetIds} labels={availableSheets.reduce((acc, s) => ({ ...acc, [s.id]: s.label }), {})} onClose={() => setEnlargedModal(null)} groups={groupedSheetsForUI} />}
     </div>
   );
 };
