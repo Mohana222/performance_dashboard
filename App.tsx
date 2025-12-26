@@ -54,61 +54,36 @@ const parseTimeToMinutes = (val: any): number | null => {
 const normalizeDateValue = (val: any): string => {
   if (!val) return "";
   const s = String(val).trim();
-  if (s === "" || s.toUpperCase() === "NIL" || s === "-") return "";
-
-  // Try parsing with Date constructor
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) {
-    const year = d.getFullYear();
-    if (year > 2000 && year < 2100) {
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-  }
-  
-  // Fallback for DD/MM/YYYY or DD-MM-YYYY
-  const dateRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/;
+  const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
   const match = s.match(dateRegex);
   if (match) {
-    let day = match[1];
-    let month = match[2];
-    let year = match[3];
-    if (year.length === 2) year = "20" + year;
-    // We assume DD-MM-YYYY as it's the most common in these projects
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const month = match[1].padStart(2, '0');
+    const day = match[2].padStart(2, '0');
+    const year = match[3];
+    return `${year}-${month}-${day}`;
   }
-
-  return "";
+  const d = new Date(s);
+  if (!isNaN(d.getTime()) && s.includes('-')) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return s;
 };
 
 const parseSheetDate = (sheetName: string): number => {
   const cleanName = sheetName.toUpperCase();
-  // Standard format: 12th DEC, 9 DEC, etc.
   const match = cleanName.match(/(\d+)(?:ST|ND|RD|TH)?\s+([A-Z]{3})/);
-  if (match) {
-    const day = parseInt(match[1], 10);
-    const months: Record<string, number> = {
-      'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
-      'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
-    };
-    const month = months[match[2]] ?? 0;
-    return new Date(2025, month, day).getTime();
-  }
-  
-  // Alternative format: DEC 12, DEC-12
-  const matchAlt = cleanName.match(/([A-Z]{3})\s*[-]?\s*(\d+)/);
-  if (matchAlt) {
-    const day = parseInt(matchAlt[2], 10);
-    const months: Record<string, number> = {
-      'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
-      'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
-    };
-    const month = months[matchAlt[1]] ?? 0;
-    return new Date(2025, month, day).getTime();
-  }
-
-  return 0;
+  if (!match) return 0;
+  const day = parseInt(match[1], 10);
+  const months: Record<string, number> = {
+    'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+    'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+  };
+  const month = months[match[2]] ?? 0;
+  // Use current year or 2025 as the base
+  return new Date(2025, month, day).getTime();
 };
 
 const formatTimestampToISO = (ts: number): string => {
@@ -315,44 +290,25 @@ const App: React.FC = () => {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
               const headers = data.length > 0 ? Object.keys(data[0]) : [];
+              const dateHeaderKey = findKey(headers, "Date");
               
-              // Key Identification
-              let dateHeaderKey = findKey(headers, "Date");
-              
-              // If still no key, search every header for "date"
-              if (!dateHeaderKey) {
-                dateHeaderKey = headers.find(h => h.toUpperCase().includes("DATE"));
-              }
-              
+              // NEW logic: Determine a global fallback date for the entire sheet
+              // Priority 1: Scan all rows to find the first valid date
+              // Priority 2: Parse sheet name
               let sheetDefaultDate = "-";
               
-              // Priority 1: Scan identified Date column for any valid date to use as fallback
+              // Attempt Priority 1: Scan data
               if (dateHeaderKey) {
                 for (const row of data) {
                   const val = normalizeDateValue(row[dateHeaderKey]);
-                  if (val && val !== "") {
+                  if (val && val !== "" && val !== "NIL" && val.includes('-')) {
                     sheetDefaultDate = val;
                     break;
                   }
                 }
               }
 
-              // Priority 2: Scan ALL columns in first 10 rows for anything that looks like a date
-              if (sheetDefaultDate === "-") {
-                const sampleRows = data.slice(0, 10);
-                for (const row of sampleRows) {
-                  for (const h of headers) {
-                    const val = normalizeDateValue(row[h]);
-                    if (val && val !== "") {
-                      sheetDefaultDate = val;
-                      break;
-                    }
-                  }
-                  if (sheetDefaultDate !== "-") break;
-                }
-              }
-
-              // Priority 3: Parse sheet name
+              // Attempt Priority 2: If still "-", parse sheet name
               if (sheetDefaultDate === "-") {
                 const ts = parseSheetDate(sname);
                 if (ts > 0) {
@@ -360,31 +316,29 @@ const App: React.FC = () => {
                 }
               }
 
-              // Merge logic
+              // Process each row
               merged.push(...data.map(row => {
                 const processedRow: RawRow = {};
                 let rowDate = "-";
 
-                // Map all row data first
-                headers.forEach(h => {
-                  processedRow[h] = row[h];
-                });
-
-                // Row-specific date lookup
+                // Check row-specific date first
                 if (dateHeaderKey) {
                   const val = normalizeDateValue(row[dateHeaderKey]);
-                  if (val && val !== "") {
+                  if (val && val !== "" && val !== "NIL" && val.includes('-')) {
                     rowDate = val;
                   }
                 }
 
-                // If no row date, use sheet default
+                // If row date is missing, use the sheet-wide fallback discovered earlier
                 if (rowDate === "-") {
                   rowDate = sheetDefaultDate;
                 }
 
-                // Standardize for display
-                processedRow['DATE'] = rowDate; 
+                // Map all row data and set standardized 'DATE' key
+                headers.forEach(h => {
+                  processedRow[h] = row[h];
+                });
+                processedRow['DATE'] = rowDate; // Explicitly set capitalized DATE
                 
                 return { 
                   ...processedRow, 
