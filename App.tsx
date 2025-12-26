@@ -54,35 +54,70 @@ const parseTimeToMinutes = (val: any): number | null => {
 const normalizeDateValue = (val: any): string => {
   if (!val) return "";
   const s = String(val).trim();
-  const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  if (s === "" || s.toUpperCase() === "NIL" || s === "-") return "";
+
+  // Try parsing with Date constructor
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const year = d.getFullYear();
+    if (year > 2000 && year < 2100) {
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  }
+  
+  // Fallback for DD/MM/YYYY or DD-MM-YYYY
+  const dateRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/;
   const match = s.match(dateRegex);
   if (match) {
-    const month = match[1].padStart(2, '0');
-    const day = match[2].padStart(2, '0');
-    const year = match[3];
-    return `${year}-${month}-${day}`;
+    let day = match[1];
+    let month = match[2];
+    let year = match[3];
+    if (year.length === 2) year = "20" + year;
+    // We assume DD-MM-YYYY as it's the most common in these projects
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
-  const d = new Date(s);
-  if (!isNaN(d.getTime()) && s.includes('-')) {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  return s;
+
+  return "";
 };
 
 const parseSheetDate = (sheetName: string): number => {
   const cleanName = sheetName.toUpperCase();
+  // Standard format: 12th DEC, 9 DEC, etc.
   const match = cleanName.match(/(\d+)(?:ST|ND|RD|TH)?\s+([A-Z]{3})/);
-  if (!match) return 0;
-  const day = parseInt(match[1], 10);
-  const months: Record<string, number> = {
-    'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
-    'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
-  };
-  const month = months[match[2]] ?? 0;
-  return new Date(2024, month, day).getTime();
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const months: Record<string, number> = {
+      'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+      'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+    };
+    const month = months[match[2]] ?? 0;
+    return new Date(2025, month, day).getTime();
+  }
+  
+  // Alternative format: DEC 12, DEC-12
+  const matchAlt = cleanName.match(/([A-Z]{3})\s*[-]?\s*(\d+)/);
+  if (matchAlt) {
+    const day = parseInt(matchAlt[2], 10);
+    const months: Record<string, number> = {
+      'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
+      'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
+    };
+    const month = months[matchAlt[1]] ?? 0;
+    return new Date(2025, month, day).getTime();
+  }
+
+  return 0;
+};
+
+const formatTimestampToISO = (ts: number): string => {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const StarField: React.FC = () => {
@@ -120,10 +155,7 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Single source of truth: Projects are server-driven only
   const [projects, setProjects] = useState<Project[]>([]);
-  
-  // Selections are ephemeral per session
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
@@ -155,7 +187,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fetch projects from server on auth
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
@@ -165,7 +196,6 @@ const App: React.FC = () => {
           if (Array.isArray(globalProjects) && globalProjects.length > 0) {
             setProjects(globalProjects);
           } else {
-            // Seed if server returns an empty array for the first time
             setProjects(SEED_PROJECTS);
             await saveGlobalProjects(API_URL, SEED_PROJECTS);
           }
@@ -179,7 +209,6 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  // Instant Birthday Checker
   useEffect(() => {
     if (isAuthenticated && projects.length > 0) {
       const scanAllBirthdays = async () => {
@@ -256,6 +285,19 @@ const App: React.FC = () => {
   }, [isAuthenticated, combinedSelectedProjectIds, projects]);
 
   useEffect(() => {
+    setSelectedSheetIds(prev => {
+      const filtered = prev.filter(sheetId => {
+        const [pid] = sheetId.split('|');
+        return combinedSelectedProjectIds.includes(pid);
+      });
+      if (filtered.length !== prev.length) {
+        return filtered;
+      }
+      return prev;
+    });
+  }, [combinedSelectedProjectIds]);
+
+  useEffect(() => {
     if (isAuthenticated && selectedSheetIds.length > 0) {
       const fetchAndMergeData = async () => {
         setIsDataLoading(true);
@@ -265,6 +307,7 @@ const App: React.FC = () => {
           if (!projectGroups[pid]) projectGroups[pid] = [];
           projectGroups[pid].push(sname);
         });
+        
         const merged: RawRow[] = [];
         await Promise.all(Object.entries(projectGroups).map(async ([pid, sheetNames]) => {
           const project = projects.find(p => p.id === pid);
@@ -272,23 +315,83 @@ const App: React.FC = () => {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
               const headers = data.length > 0 ? Object.keys(data[0]) : [];
-              const colCHeader = headers[2]; 
-              let lastValidDateInSheet = "-";
-              merged.push(...data.map(row => {
-                const processedRow: RawRow = {};
-                if (colCHeader) {
-                  const rawColCValue = String(row[colCHeader] || "").trim();
-                  const normalized = normalizeDateValue(rawColCValue);
-                  if (normalized && normalized !== "" && normalized !== "NIL" && normalized.includes('-')) {
-                    lastValidDateInSheet = normalized;
+              
+              // Key Identification
+              let dateHeaderKey = findKey(headers, "Date");
+              
+              // If still no key, search every header for "date"
+              if (!dateHeaderKey) {
+                dateHeaderKey = headers.find(h => h.toUpperCase().includes("DATE"));
+              }
+              
+              let sheetDefaultDate = "-";
+              
+              // Priority 1: Scan identified Date column for any valid date to use as fallback
+              if (dateHeaderKey) {
+                for (const row of data) {
+                  const val = normalizeDateValue(row[dateHeaderKey]);
+                  if (val && val !== "") {
+                    sheetDefaultDate = val;
+                    break;
                   }
                 }
-                Object.keys(row).forEach(key => {
-                  if (key === colCHeader) processedRow[key] = lastValidDateInSheet;
-                  else processedRow[key] = row[key];
+              }
+
+              // Priority 2: Scan ALL columns in first 10 rows for anything that looks like a date
+              if (sheetDefaultDate === "-") {
+                const sampleRows = data.slice(0, 10);
+                for (const row of sampleRows) {
+                  for (const h of headers) {
+                    const val = normalizeDateValue(row[h]);
+                    if (val && val !== "") {
+                      sheetDefaultDate = val;
+                      break;
+                    }
+                  }
+                  if (sheetDefaultDate !== "-") break;
+                }
+              }
+
+              // Priority 3: Parse sheet name
+              if (sheetDefaultDate === "-") {
+                const ts = parseSheetDate(sname);
+                if (ts > 0) {
+                  sheetDefaultDate = formatTimestampToISO(ts);
+                }
+              }
+
+              // Merge logic
+              merged.push(...data.map(row => {
+                const processedRow: RawRow = {};
+                let rowDate = "-";
+
+                // Map all row data first
+                headers.forEach(h => {
+                  processedRow[h] = row[h];
                 });
-                processedRow['Date'] = lastValidDateInSheet;
-                return { ...processedRow, '__projectSource': project.name, '__projectCategory': project.category, '__sheetSource': sname };
+
+                // Row-specific date lookup
+                if (dateHeaderKey) {
+                  const val = normalizeDateValue(row[dateHeaderKey]);
+                  if (val && val !== "") {
+                    rowDate = val;
+                  }
+                }
+
+                // If no row date, use sheet default
+                if (rowDate === "-") {
+                  rowDate = sheetDefaultDate;
+                }
+
+                // Standardize for display
+                processedRow['DATE'] = rowDate; 
+                
+                return { 
+                  ...processedRow, 
+                  '__projectSource': project.name, 
+                  '__projectCategory': project.category, 
+                  '__sheetSource': sname 
+                };
               }));
             }));
           }
@@ -593,7 +696,7 @@ const App: React.FC = () => {
                     </div>
                   </>
                 )}
-                {currentView === 'raw' && <DataTable title="Consolidated Intelligence" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'Date', 'Project Category']} />}
+                {currentView === 'raw' && <DataTable title="Consolidated Intelligence" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'DATE', 'Project Category']} />}
                 {currentView === 'annotator' && <DataTable title="Annotator Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
                 {currentView === 'username' && <DataTable title="Username Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
                 {currentView === 'qc-user' && <DataTable title="QA (Username)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}

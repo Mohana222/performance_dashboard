@@ -85,7 +85,7 @@ export const findKey = (keys: string[], targetName: string) => {
     "annotatorname": ["annotatorname", "annotator", "name", "worker", "annotator_name"],
     "frameid": ["frameid", "frame", "id", "imageid", "frame_id"],
     "numberofobjectannotated": ["numberofobjectannotated", "objects", "objectcount", "totalobjects", "annotatedobjects", "object_count"],
-    "date": ["date", "timestamp", "createdat", "day", "time"],
+    "date": ["date", "timestamp", "createdat", "day", "time", "period", "entrydate"],
     "logintime": ["logintime", "login", "timein", "clockin", "login_time", "starttime"],
     "internalqcname": ["internalqcname", "internalqc", "qcname", "qcby", "verifiedby", "qc_name", "qa_name", "qa"],
     "internalpolygonerrorcount": ["internalpolygonerrorcount", "errorcount", "errors", "polygonerrors", "error_count", "totalerrors", "internal_errors"]
