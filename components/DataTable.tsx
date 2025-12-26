@@ -57,6 +57,18 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     headers.forEach(header => {
       const normHeader = header.toLowerCase().replace(new RegExp("[\\s\\-_]+", "g"), "");
       
+      // Explicitly ignore 'Video ID' from totals
+      if (normHeader === "videoid") {
+        return;
+      }
+
+      // Explicitly handle 'Frame ID' as a count instead of a sum
+      if (normHeader === "frameid") {
+        const count = filteredData.filter(row => row[header] !== null && row[header] !== undefined && String(row[header]).trim() !== "").length;
+        results[header] = { value: count, label: 'Count', type: 'numeric' };
+        return;
+      }
+
       const columnValues = filteredData.map(row => String(row[header] || '').toUpperCase());
       const isAttendanceCol = columnValues.some(v => v === 'PRESENT' || v === 'ABSENT' || v === 'NIL' || v === 'P(1/2)');
       
@@ -91,6 +103,20 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     return results;
   }, [filteredData, headers]);
 
+  const overallAttendanceTotal = useMemo(() => {
+    const summary = { present: 0, half: 0, absent: 0 };
+    let hasAttendance = false;
+    Object.values(totals).forEach(t => {
+      if (t.type === 'attendance') {
+        summary.present += t.value.present;
+        summary.half += t.value.half;
+        summary.absent += t.value.absent;
+        hasAttendance = true;
+      }
+    });
+    return hasAttendance ? summary : null;
+  }, [totals]);
+
   const exportToCSV = () => {
     if (filteredData.length === 0) return;
     const csvRows = [];
@@ -100,7 +126,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
         let val = row[header] ?? '';
         if (val === 'Present') val = 'P';
         else if (val === 'Absent') val = 'L';
-        else if (val === 'P(1/2)') val = 'P(1/2)';
+        else if (val === 'P(1/2)') val = 'HD';
         const escaped = ('' + val).replace(/"/g, '""');
         return `"${escaped}"`;
       });
@@ -185,7 +211,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                     <td key={header} className="px-8 py-4 text-sm text-slate-300 whitespace-nowrap group-hover:text-white">
                       {row[header] === 'Present' ? <span className="text-emerald-400 font-bold">P</span> : 
                        row[header] === 'Absent' ? <span className="text-rose-400 font-bold">L</span> : 
-                       row[header] === 'P(1/2)' ? <span className="text-orange-400 font-bold">P(1/2)</span> : 
+                       row[header] === 'P(1/2)' ? <span className="text-orange-400 font-bold">HD</span> : 
                        row[header] === 'NIL' ? <span className="text-slate-600">{row[header]}</span> : 
                        (row[header] ?? <span className="text-slate-600 font-mono">-</span>)}
                     </td>
@@ -201,10 +227,31 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
               <tr>
                 {headers.map((header, idx) => (
                   <td key={`foot-${idx}`} className="px-8 py-5 text-sm font-black text-white whitespace-nowrap">
-                    {idx === 0 ? <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-pink-400">GRAND TOTALS</span> : (
+                    {idx === 0 ? (
+                      <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-pink-400">GRAND TOTALS</span>
+                    ) : idx === 1 ? (
+                      <div className="flex flex-col gap-2">
+                         {/* Display aggregate count for summary views */}
+                         <span className="text-[10px] text-slate-400 uppercase tracking-[0.15em] font-black border-b border-slate-700/50 pb-1">
+                            TOTAL COUNT: {filteredData.length}
+                         </span>
+                         
+                         {overallAttendanceTotal ? (
+                          <div className="flex flex-row flex-wrap items-center gap-x-4 text-[10px] uppercase tracking-[0.1em]">
+                            <span className="text-emerald-400">TOTAL P: {overallAttendanceTotal.present}</span>
+                            <span className="text-orange-400">TOTAL HD: {overallAttendanceTotal.half}</span>
+                            <span className="text-rose-400">TOTAL L: {overallAttendanceTotal.absent}</span>
+                          </div>
+                         ) : (
+                           totals[header] && (
+                            <span className="text-violet-400">{totals[header].value.toLocaleString()}</span>
+                           )
+                         )}
+                      </div>
+                    ) : (
                       totals[header] && (
                         totals[header].type === 'attendance' ? (
-                          <div className="flex flex-col text-[10px] gap-0.5">
+                          <div className="flex flex-row flex-wrap items-center gap-x-4 text-[10px] uppercase tracking-wider">
                             <span className="text-emerald-400">P: {totals[header].value.present}</span>
                             <span className="text-orange-400">HD: {totals[header].value.half}</span>
                             <span className="text-rose-400">L: {totals[header].value.absent}</span>
