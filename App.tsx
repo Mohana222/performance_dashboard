@@ -120,13 +120,10 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Persistence: Projects are saved globally, but selections are ephemeral per session
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const cached = localStorage.getItem('dc_projects');
-    return cached ? JSON.parse(cached) : [];
-  });
+  // Single Source of Truth: The Project list is now server-driven
+  const [projects, setProjects] = useState<Project[]>([]);
   
-  // Selections are now initialized as empty per requirements
+  // Selections are ephemeral per session
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
@@ -150,25 +147,29 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // We only persist the Project list, not the user selections
-  useEffect(() => { localStorage.setItem('dc_projects', JSON.stringify(projects)); }, [projects]);
-
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
     await saveGlobalProjects(API_URL, updatedProjects);
   }, []);
 
+  // Fetch projects from server on auth, or initialize with seed if server is empty
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
         setIsLoading(true);
-        const globalProjects = await fetchGlobalProjects(API_URL);
-        if (globalProjects && globalProjects.length > 0) {
-          setProjects(globalProjects);
-        } else if (!projects.length) {
-          setProjects(SEED_PROJECTS);
-          await saveGlobalProjects(API_URL, SEED_PROJECTS);
+        try {
+          const globalProjects = await fetchGlobalProjects(API_URL);
+          if (globalProjects && globalProjects.length > 0) {
+            setProjects(globalProjects);
+          } else {
+            // If server database is empty, initialize with seed projects
+            setProjects(SEED_PROJECTS);
+            await saveGlobalProjects(API_URL, SEED_PROJECTS);
+          }
+        } catch (err) {
+          console.error("Critical: Failed to load shared projects matrix.");
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       };
       loadProjects();
     }
@@ -306,7 +307,6 @@ const App: React.FC = () => {
       if (res.success) {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
-        // Explicitly ensure fresh arrays on login
         setSelectedProdProjectIds([]);
         setSelectedHourlyProjectIds([]);
         setSelectedSheetIds([]);
@@ -325,7 +325,10 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     setRawData([]);
     setBirthdayMessage('');
-    // Clear all manual selections on logout
+    setUsername('');
+    setPassword('');
+    setShowPassword(false);
+    setLoginError('');
     setSelectedProdProjectIds([]);
     setSelectedHourlyProjectIds([]);
     setSelectedSheetIds([]);
@@ -334,23 +337,29 @@ const App: React.FC = () => {
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
     const colors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.success, COLORS.warning, COLORS.danger];
     const newProject = { ...p, id: Date.now().toString(), color: colors[Math.floor(Math.random() * colors.length)] };
-    const updated = [...projects, newProject];
-    setProjects(updated);
-    await syncProjectsToServer(updated);
+    setProjects(prev => {
+      const updated = [...prev, newProject];
+      syncProjectsToServer(updated);
+      return updated;
+    });
   };
 
   const updateProject = async (updated: Project) => {
-    const newList = projects.map(p => p.id === updated.id ? updated : p);
-    setProjects(newList);
-    await syncProjectsToServer(newList);
+    setProjects(prev => {
+      const newList = prev.map(p => p.id === updated.id ? updated : p);
+      syncProjectsToServer(newList);
+      return newList;
+    });
   };
 
   const deleteProject = async (id: string) => {
-    const newList = projects.filter(p => p.id !== id);
-    setProjects(newList);
+    setProjects(prev => {
+      const newList = prev.filter(p => p.id !== id);
+      syncProjectsToServer(newList);
+      return newList;
+    });
     setSelectedProdProjectIds(prev => prev.filter(pid => pid !== id));
     setSelectedHourlyProjectIds(prev => prev.filter(pid => pid !== id));
-    await syncProjectsToServer(newList);
   };
 
   const handleSelectProject = (id: string) => {
@@ -366,7 +375,6 @@ const App: React.FC = () => {
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
     
-    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
@@ -455,8 +463,6 @@ const App: React.FC = () => {
 
   const metrics = useMemo(() => {
     const prodData = rawData.filter(r => r['__projectCategory'] === 'production'), globalFrames = new Set<string>();
-    
-    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kFrame = findKey(allKeys, "Frame ID");
     prodData.forEach(r => { const f = String(r[kFrame || ''] || '').trim(); if (f) globalFrames.add(f); });
@@ -488,7 +494,6 @@ const App: React.FC = () => {
 
   const rawHeaders = useMemo(() => {
     if (rawData.length === 0) return [] as string[];
-    // Fix: Cast Array.from result to string[] and ensure base return type is string[] for startsWith method to be valid
     return (Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[])
       .filter(key => !key.startsWith('__'));
   }, [rawData]);
@@ -567,10 +572,10 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {(isDataLoading || isLoading) && rawData.length === 0 ? (
+        {(isDataLoading || isLoading) && projects.length === 0 ? (
           <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
             <div className="w-20 h-20 border-8 border-violet-600/10 border-t-violet-600 rounded-full animate-spin"></div>
-            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting Data Matrix...</h3>
+            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting Shared Data Matrix...</h3>
           </div>
         ) : (
           <div className="space-y-10 pb-20">
