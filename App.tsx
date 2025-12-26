@@ -16,14 +16,14 @@ const SEED_PROJECTS: Project[] = [
   {
     id: 'dc-ramp-prod-dec-2025',
     name: 'Production Tracker Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbyvVMYOOMsOh9L0-Q_-cWZr_I2K__45vdvI3cuAIZVQ8yt5tT-Qsf5tQ_88PmH-1G8x/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyxlBcUoDH0F8o1lId-b5urjd2FXiXgkfHWlYL_zCDDLQfcDJke-mfj97B6RDF4BzsF/exec',
     color: COLORS.primary,
     category: 'production'
   },
   {
     id: 'ramp-hourly-dec-2025',
     name: 'Hourly Tracker_Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbzqDuTjY3u2Yq4jTcvFpk_kD01V0NFfrpiO8a5M70EJO5869908lYUdW-Rv2jPtL1VNAw/exec',
+    url: 'https://script.google.com/macros/s/AKfycbx9Y_hs5f32OXLb3pRqPzGPLMEdVDh2dLfqGIk3yFHWRh14SjaK4GKRZ_Z7ZyDG_YUc_w/exec',
     color: COLORS.secondary,
     category: 'hourly'
   }
@@ -51,23 +51,38 @@ const parseTimeToMinutes = (val: any): number | null => {
   return null;
 };
 
+/**
+ * Normalizes any date input to "yyyy/MM/dd" format (e.g. 2025/12/09).
+ */
 const normalizeDateValue = (val: any): string => {
-  if (!val) return "";
+  if (val === null || val === undefined) return "";
   const s = String(val).trim();
-  const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
-  const match = s.match(dateRegex);
-  if (match) {
-    const month = match[1].padStart(2, '0');
-    const day = match[2].padStart(2, '0');
-    const year = match[3];
-    return `${year}-${month}-${day}`;
+  if (s === "" || s.toUpperCase() === "NIL" || s === "-" || s.toLowerCase() === "undefined") return "";
+
+  // Handle ISO-style strings that often shift dates due to UTC
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10) - 1;
+    const day = parseInt(isoMatch[3], 10);
+    const hour = parseInt(isoMatch[4], 10);
+    let d = new Date(year, month, day);
+    // Adjust if it looks like IST midnight offset (18:30 UTC)
+    if (hour >= 18) {
+      d.setDate(d.getDate() + 1);
+    }
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
   }
+
+  // Handle standard date strings
   const d = new Date(s);
-  if (!isNaN(d.getTime()) && s.includes('-')) {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
+  if (!isNaN(d.getTime())) {
     const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    if (year > 1900 && year < 2100) {
+      return `${year}/${month}/${day}`;
+    }
   }
   return s;
 };
@@ -75,24 +90,28 @@ const normalizeDateValue = (val: any): string => {
 const parseSheetDate = (sheetName: string): number => {
   const cleanName = sheetName.toUpperCase();
   const match = cleanName.match(/(\d+)(?:ST|ND|RD|TH)?\s+([A-Z]{3})/);
-  if (!match) return 0;
-  const day = parseInt(match[1], 10);
   const months: Record<string, number> = {
     'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
     'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
   };
-  const month = months[match[2]] ?? 0;
-  // Use current year or 2025 as the base
-  return new Date(2025, month, day).getTime();
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = months[match[2]] ?? 0;
+    return new Date(2025, month, day).getTime();
+  }
+  const matchAlt = cleanName.match(/([A-Z]{3})\s*[-]?\s*(\d+)/);
+  if (matchAlt) {
+    const day = parseInt(matchAlt[2], 10);
+    const month = months[matchAlt[1]] ?? 0;
+    return new Date(2025, month, day).getTime();
+  }
+  return 0;
 };
 
-const formatTimestampToISO = (ts: number): string => {
+const formatTimestampToDisplayDate = (ts: number): string => {
   if (!ts) return "-";
   const d = new Date(ts);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const StarField: React.FC = () => {
@@ -154,6 +173,10 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
+  const productionRawData = useMemo(() => {
+    return rawData.filter(row => row['__projectCategory'] === 'production');
+  }, [rawData]);
+
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
     try {
       await saveGlobalProjects(API_URL, updatedProjects);
@@ -191,12 +214,10 @@ const App: React.FC = () => {
         const tDay = today.getDate();
         const tMonth = today.getMonth() + 1;
         const allBirthdayNames: string[] = [];
-
         await Promise.all(projects.map(async (project) => {
           try {
             const list = await getSheetList(project.url);
             const birthdaySheets = list.filter(name => name.toLowerCase().includes('birthday'));
-            
             await Promise.all(birthdaySheets.map(async (sheetName) => {
               const bData = await getSheetData(project.url, sheetName);
               const matches = bData.filter(row => {
@@ -206,17 +227,12 @@ const App: React.FC = () => {
                 if (!isNaN(d.getTime())) {
                   return d.getDate() === tDay && (d.getMonth() + 1) === tMonth;
                 }
-                const parts = dobRaw.split('/');
-                if (parts.length >= 2) {
-                  return parseInt(parts[0], 10) === tMonth && parseInt(parts[1], 10) === tDay;
-                }
                 return false;
               }).map(row => String(row['NAME'] || row['name'] || row['Employee Name'] || 'Someone').trim());
               allBirthdayNames.push(...matches);
             }));
           } catch (err) { console.debug(`Skipping ${project.name} for birthday scan.`); }
         }));
-
         if (allBirthdayNames.length > 0) {
           const uniqueNames = Array.from(new Set(allBirthdayNames));
           setBirthdayMessage(`Happy Birthday! ${uniqueNames.join(', ')} 🎂`);
@@ -265,9 +281,7 @@ const App: React.FC = () => {
         const [pid] = sheetId.split('|');
         return combinedSelectedProjectIds.includes(pid);
       });
-      if (filtered.length !== prev.length) {
-        return filtered;
-      }
+      if (filtered.length !== prev.length) return filtered;
       return prev;
     });
   }, [combinedSelectedProjectIds]);
@@ -282,7 +296,6 @@ const App: React.FC = () => {
           if (!projectGroups[pid]) projectGroups[pid] = [];
           projectGroups[pid].push(sname);
         });
-        
         const merged: RawRow[] = [];
         await Promise.all(Object.entries(projectGroups).map(async ([pid, sheetNames]) => {
           const project = projects.find(p => p.id === pid);
@@ -290,55 +303,48 @@ const App: React.FC = () => {
             await Promise.all(sheetNames.map(async (sname) => {
               const data = await getSheetData(project.url, sname);
               const headers = data.length > 0 ? Object.keys(data[0]) : [];
-              const dateHeaderKey = findKey(headers, "Date");
               
-              // NEW logic: Determine a global fallback date for the entire sheet
-              // Priority 1: Scan all rows to find the first valid date
-              // Priority 2: Parse sheet name
+              // Identify the primary date key from the sheet
+              let dateHeaderKey = headers[2]; // Fallback to column C
+              const foundKey = findKey(headers, "Date");
+              if (foundKey) dateHeaderKey = foundKey;
+
               let sheetDefaultDate = "-";
-              
-              // Attempt Priority 1: Scan data
               if (dateHeaderKey) {
                 for (const row of data) {
                   const val = normalizeDateValue(row[dateHeaderKey]);
-                  if (val && val !== "" && val !== "NIL" && val.includes('-')) {
+                  if (val && val !== "" && val !== "-") {
                     sheetDefaultDate = val;
                     break;
                   }
                 }
               }
-
-              // Attempt Priority 2: If still "-", parse sheet name
               if (sheetDefaultDate === "-") {
                 const ts = parseSheetDate(sname);
-                if (ts > 0) {
-                  sheetDefaultDate = formatTimestampToISO(ts);
-                }
+                if (ts > 0) sheetDefaultDate = formatTimestampToDisplayDate(ts);
               }
 
-              // Process each row
               merged.push(...data.map(row => {
                 const processedRow: RawRow = {};
                 let rowDate = "-";
-
-                // Check row-specific date first
-                if (dateHeaderKey) {
-                  const val = normalizeDateValue(row[dateHeaderKey]);
-                  if (val && val !== "" && val !== "NIL" && val.includes('-')) {
-                    rowDate = val;
+                
+                headers.forEach(h => { 
+                  let cellVal = row[h];
+                  // Normalize date values directly into their original keys to prevent ISO strings in the table
+                  if (h === dateHeaderKey || h.toLowerCase() === 'date' || h.toLowerCase() === 'date ') {
+                    const norm = normalizeDateValue(cellVal);
+                    if (norm && norm !== "") {
+                       cellVal = norm;
+                       rowDate = norm;
+                    }
                   }
-                }
-
-                // If row date is missing, use the sheet-wide fallback discovered earlier
-                if (rowDate === "-") {
-                  rowDate = sheetDefaultDate;
-                }
-
-                // Map all row data and set standardized 'DATE' key
-                headers.forEach(h => {
-                  processedRow[h] = row[h];
+                  processedRow[h] = cellVal; 
                 });
-                processedRow['DATE'] = rowDate; // Explicitly set capitalized DATE
+
+                if (rowDate === "-") rowDate = sheetDefaultDate;
+                
+                // Set the consistent capitalized DATE key as well
+                processedRow['DATE'] = rowDate; 
                 
                 return { 
                   ...processedRow, 
@@ -429,21 +435,17 @@ const App: React.FC = () => {
 
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
-    
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
-    
     const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const userMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
     const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
     const combinedPerformanceMap: Record<string, { objects: number }> = {};
     const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {}, uniqueSheetNames = new Set<string>();
-
     rawData.forEach(row => {
       const category = row['__projectCategory'], sheetSource = String(row['__sheetSource'] || '');
       const isQcSheet = sheetSource.toLowerCase().includes('qc');
-
       if (category === 'production') {
         const cleanRawName = (val: any) => String(val || '').trim().replace(/@rprocess\.in/gi, '');
         const ann = cleanRawName(row[kAnn || ''] || row[kUser || '']);
@@ -452,7 +454,6 @@ const App: React.FC = () => {
         const objCount = parseFloat(String(row[kObj || ''] || '0')) || 0;
         const qcName = String(row[kQC || ''] || '').trim();
         const errCount = parseFloat(String(row[kErr || ''] || '0')) || 0;
-
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (frameId) annotatorMap[ann].frameSet.add(frameId);
@@ -495,7 +496,6 @@ const App: React.FC = () => {
         }
       }
     });
-    
     const sortedSheetHeaders = Array.from(uniqueSheetNames).sort((a, b) => parseSheetDate(a) - parseSheetDate(b) || a.localeCompare(b, undefined, { numeric: true }));
     const attendanceFlat = Object.keys(employeeData).map(name => {
       const meta = employeeData[name], row: Record<string, string> = { _originalSno: meta.sno, NAME: meta.name };
@@ -505,7 +505,6 @@ const App: React.FC = () => {
       const snoA = parseInt(a._originalSno, 10), snoB = parseInt(b._originalSno, 10);
       return (!isNaN(snoA) && !isNaN(snoB)) ? snoA - snoB : a.NAME.localeCompare(b.NAME);
     }).map((row, idx) => { const { _originalSno, ...rest } = row; return { SNO: (idx + 1).toString(), ...rest }; });
-    
     return {
       annotators: Object.entries(annotatorMap).map(([name, data]) => ({ name, frameCount: data.frameSet.size, objectCount: data.objects })),
       users: Object.entries(userMap).map(([name, data]) => ({ name, frameCount: data.frameSet.size, objectCount: data.objects })),
@@ -532,9 +531,7 @@ const App: React.FC = () => {
   }, [processedSummaries, rawData]);
 
   const pieData = useMemo(() => {
-    return [...processedSummaries.combinedPerformance]
-      .sort((a,b) => b.objectCount - a.objectCount)
-      .map(a => ({ name: a.name, value: a.objectCount }));
+    return [...processedSummaries.combinedPerformance].sort((a,b) => b.objectCount - a.objectCount).map(a => ({ name: a.name, value: a.objectCount }));
   }, [processedSummaries]);
 
   const pieChartTitle = useMemo(() => {
@@ -548,10 +545,9 @@ const App: React.FC = () => {
   }, [selectedSheetIds]);
 
   const rawHeaders = useMemo(() => {
-    if (rawData.length === 0) return [] as string[];
-    return (Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[])
-      .filter(key => !key.startsWith('__'));
-  }, [rawData]);
+    if (productionRawData.length === 0) return [] as string[];
+    return (Array.from(new Set(productionRawData.flatMap(row => Object.keys(row)))) as string[]).filter(key => !key.startsWith('__'));
+  }, [productionRawData]);
 
   if (!isAuthenticated) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -615,7 +611,6 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-bold text-white tracking-tight">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Overview'}</h1>
             <p className="text-slate-400 text-sm mt-1">Active Projects: <span className="text-violet-400 font-semibold">{selectedSheetIds.length} datasets synchronization live.</span></p>
           </div>
-          
           <div className="flex items-center gap-6">
             {birthdayMessage && (
               <div className="bg-gradient-to-r from-violet-600/20 to-pink-600/20 border border-violet-500/30 px-6 py-3 rounded-2xl flex items-center gap-3 animate-fade-up shadow-[0_0_20px_rgba(139,92,246,0.1)]">
@@ -650,7 +645,7 @@ const App: React.FC = () => {
                     </div>
                   </>
                 )}
-                {currentView === 'raw' && <DataTable title="Consolidated Intelligence" headers={rawHeaders} data={rawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'DATE', 'Project Category']} />}
+                {currentView === 'raw' && <DataTable title="Consolidated Intelligence" headers={rawHeaders} data={productionRawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'DATE', 'Project Category']} />}
                 {currentView === 'annotator' && <DataTable title="Annotator Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
                 {currentView === 'username' && <DataTable title="Username Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
                 {currentView === 'qc-user' && <DataTable title="QA (Username)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
