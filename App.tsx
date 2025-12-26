@@ -120,24 +120,16 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Persistence: Initial load from localStorage
+  // Persistence: Projects are saved globally, but selections are ephemeral per session
   const [projects, setProjects] = useState<Project[]>(() => {
     const cached = localStorage.getItem('dc_projects');
     return cached ? JSON.parse(cached) : [];
   });
   
-  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>(() => {
-    const cached = localStorage.getItem('dc_sel_prod');
-    return cached ? JSON.parse(cached) : [];
-  });
-  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>(() => {
-    const cached = localStorage.getItem('dc_sel_hourly');
-    return cached ? JSON.parse(cached) : [];
-  });
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => {
-    const cached = localStorage.getItem('dc_sel_sheets');
-    return cached ? JSON.parse(cached) : [];
-  });
+  // Selections are now initialized as empty per requirements
+  const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
+  const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
+  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
 
   const combinedSelectedProjectIds = useMemo(() => [...selectedProdProjectIds, ...selectedHourlyProjectIds], [selectedProdProjectIds, selectedHourlyProjectIds]);
   const [availableSheets, setAvailableSheets] = useState<{ id: string; label: string; projectId: string; sheetName: string }[]>([]);
@@ -158,10 +150,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // Persistence Effects
-  useEffect(() => { localStorage.setItem('dc_sel_prod', JSON.stringify(selectedProdProjectIds)); }, [selectedProdProjectIds]);
-  useEffect(() => { localStorage.setItem('dc_sel_hourly', JSON.stringify(selectedHourlyProjectIds)); }, [selectedHourlyProjectIds]);
-  useEffect(() => { localStorage.setItem('dc_sel_sheets', JSON.stringify(selectedSheetIds)); }, [selectedSheetIds]);
+  // We only persist the Project list, not the user selections
   useEffect(() => { localStorage.setItem('dc_projects', JSON.stringify(projects)); }, [projects]);
 
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
@@ -185,7 +174,7 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  // Instant Birthday Checker (Scans all configured projects immediately)
+  // Instant Birthday Checker
   useEffect(() => {
     if (isAuthenticated && projects.length > 0) {
       const scanAllBirthdays = async () => {
@@ -317,6 +306,10 @@ const App: React.FC = () => {
       if (res.success) {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
+        // Explicitly ensure fresh arrays on login
+        setSelectedProdProjectIds([]);
+        setSelectedHourlyProjectIds([]);
+        setSelectedSheetIds([]);
       } else {
         setLoginError(res.message || 'Invalid login credentials');
       }
@@ -332,6 +325,10 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     setRawData([]);
     setBirthdayMessage('');
+    // Clear all manual selections on logout
+    setSelectedProdProjectIds([]);
+    setSelectedHourlyProjectIds([]);
+    setSelectedSheetIds([]);
   };
 
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
@@ -368,7 +365,9 @@ const App: React.FC = () => {
 
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
-    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    
+    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
+    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
     const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
@@ -456,7 +455,9 @@ const App: React.FC = () => {
 
   const metrics = useMemo(() => {
     const prodData = rawData.filter(r => r['__projectCategory'] === 'production'), globalFrames = new Set<string>();
-    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    
+    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
+    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kFrame = findKey(allKeys, "Frame ID");
     prodData.forEach(r => { const f = String(r[kFrame || ''] || '').trim(); if (f) globalFrames.add(f); });
     const totalObjects = processedSummaries.annotators.reduce((acc, cur) => acc + cur.objectCount, 0), qcObjectsCount = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.objectCount, 0), totalErrors = processedSummaries.qcAnn.reduce((acc, cur) => acc + cur.errorCount, 0);
@@ -486,8 +487,9 @@ const App: React.FC = () => {
   }, [selectedSheetIds]);
 
   const rawHeaders = useMemo(() => {
-    if (rawData.length === 0) return [];
-    return Array.from(new Set(rawData.flatMap(row => Object.keys(row))))
+    if (rawData.length === 0) return [] as string[];
+    // Fix: Cast Array.from result to string[] and ensure base return type is string[] for startsWith method to be valid
+    return (Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[])
       .filter(key => !key.startsWith('__'));
   }, [rawData]);
 
@@ -601,7 +603,7 @@ const App: React.FC = () => {
       </main>
 
       {showProjectManager && (
-        <ProjectManager projects={projects} activeProjectId={combinedSelectedProjectIds[0] || ''} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
+        <ProjectManager projects={projects} selectedProjectIds={combinedSelectedProjectIds} userRole="desicrew" onAdd={addProject} onUpdate={updateProject} onDelete={deleteProject} onSelect={handleSelectProject} onClose={() => setShowProjectManager(false)} />
       )}
       {enlargedModal === 'projects-prod' && <SelectionModal title="Production Projects" options={projects.filter(p => p.category === 'production').map(p => p.id)} selected={selectedProdProjectIds} onChange={setSelectedProdProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
       {enlargedModal === 'projects-hourly' && <SelectionModal title="Hourly Projects" options={projects.filter(p => p.category === 'hourly').map(p => p.id)} selected={selectedHourlyProjectIds} onChange={setSelectedHourlyProjectIds} labels={projects.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {})} onClose={() => setEnlargedModal(null)} />}
