@@ -130,7 +130,11 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     // 2. Data Rows
     filteredData.forEach(row => {
       const values = headers.map(header => {
-        const val = row[header] ?? '';
+        let val = row[header] ?? '';
+        // Convert 'Present' to 'P' and 'Absent' to 'L' for export as requested
+        if (val === 'Present') val = 'P';
+        else if (val === 'Absent') val = 'L';
+        
         const escaped = ('' + val).replace(/"/g, '""');
         return `"${escaped}"`;
       });
@@ -149,7 +153,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
       // Check for column-specific totals
       if (totals[header]) {
         if (totals[header].type === 'attendance') {
-          cellValue = `Present: ${totals[header].value.present} | Absent: ${totals[header].value.absent}`;
+          cellValue = `P: ${totals[header].value.present} | L: ${totals[header].value.absent}`;
         } else {
           cellValue = String(totals[header].value);
         }
@@ -157,7 +161,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
 
       // Add Aggregate Attendance for column index 1 if it exists
       if (idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0)) {
-        const aggrText = `[ALL SHEETS AGGR -> P: ${aggregateAttendance.present}, L: ${aggregateAttendance.absent}]`;
+        const aggrText = `[AGGREGATE -> P: ${aggregateAttendance.present}, L: ${aggregateAttendance.absent}]`;
         cellValue = cellValue ? `${cellValue} ${aggrText}` : aggrText;
       }
 

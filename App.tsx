@@ -16,14 +16,14 @@ const SEED_PROJECTS: Project[] = [
   {
     id: 'dc-ramp-prod-dec-2025',
     name: 'Production Tracker Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbxDB0TGWeQYZiQaBmWX4iLkLjhSpAug5WtWR2jAOaLNlNtGZkHkdMkI5GjNA11YzuX8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyvVMYOOMsOh9L0-Q_-cWZr_I2K__45vdvI3cuAIZVQ8yt5tT-Qsf5tQ_88PmH-1G8x/exec',
     color: COLORS.primary,
     category: 'production'
   },
   {
     id: 'ramp-hourly-dec-2025',
     name: 'Hourly Tracker_Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbx9HB_olO-Z0TEDpAAqpx82CR87Hzy6xUeLCdc8dLq7HSs6FAXtudrMxq45LOavJYiXYg/exec',
+    url: 'https://script.google.com/macros/s/AKfycbzqDuTjY3u2Yq4jTcvFpk_kD01V0NFfrpiO8a5M70EJO5869908lYUdW-Rv2jPtL1VNAw/exec',
     color: COLORS.secondary,
     category: 'hourly'
   }
@@ -120,13 +120,10 @@ const App: React.FC = () => {
   const [enlargedModal, setEnlargedModal] = useState<'projects-prod' | 'projects-hourly' | 'sheets' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Persistence: Projects are saved globally, but selections are ephemeral per session
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const cached = localStorage.getItem('dc_projects');
-    return cached ? JSON.parse(cached) : [];
-  });
+  // Single source of truth: Projects are server-driven only
+  const [projects, setProjects] = useState<Project[]>([]);
   
-  // Selections are now initialized as empty per requirements
+  // Selections are ephemeral per session
   const [selectedProdProjectIds, setSelectedProdProjectIds] = useState<string[]>([]);
   const [selectedHourlyProjectIds, setSelectedHourlyProjectIds] = useState<string[]>([]);
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
@@ -150,25 +147,33 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('overview');
   const [rawData, setRawData] = useState<RawRow[]>([]);
 
-  // We only persist the Project list, not the user selections
-  useEffect(() => { localStorage.setItem('dc_projects', JSON.stringify(projects)); }, [projects]);
-
   const syncProjectsToServer = useCallback(async (updatedProjects: Project[]) => {
-    await saveGlobalProjects(API_URL, updatedProjects);
+    try {
+      await saveGlobalProjects(API_URL, updatedProjects);
+    } catch (err) {
+      console.error("Critical error syncing shared database.");
+    }
   }, []);
 
+  // Fetch projects from server on auth
   useEffect(() => {
     if (isAuthenticated) {
       const loadProjects = async () => {
         setIsLoading(true);
-        const globalProjects = await fetchGlobalProjects(API_URL);
-        if (globalProjects && globalProjects.length > 0) {
-          setProjects(globalProjects);
-        } else if (!projects.length) {
-          setProjects(SEED_PROJECTS);
-          await saveGlobalProjects(API_URL, SEED_PROJECTS);
+        try {
+          const globalProjects = await fetchGlobalProjects(API_URL);
+          if (Array.isArray(globalProjects) && globalProjects.length > 0) {
+            setProjects(globalProjects);
+          } else {
+            // Seed if server returns an empty array for the first time
+            setProjects(SEED_PROJECTS);
+            await saveGlobalProjects(API_URL, SEED_PROJECTS);
+          }
+        } catch (err) {
+          console.error("Critical: Failed to load shared projects matrix.");
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       };
       loadProjects();
     }
@@ -306,7 +311,6 @@ const App: React.FC = () => {
       if (res.success) {
         sessionStorage.setItem('ok', '1');
         setIsAuthenticated(true);
-        // Explicitly ensure fresh arrays on login
         setSelectedProdProjectIds([]);
         setSelectedHourlyProjectIds([]);
         setSelectedSheetIds([]);
@@ -325,12 +329,10 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     setRawData([]);
     setBirthdayMessage('');
-    // Security: Clear all login fields
     setUsername('');
     setPassword('');
     setShowPassword(false);
     setLoginError('');
-    // Clear all manual selections on logout
     setSelectedProdProjectIds([]);
     setSelectedHourlyProjectIds([]);
     setSelectedSheetIds([]);
@@ -371,7 +373,6 @@ const App: React.FC = () => {
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
     
-    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
@@ -460,8 +461,6 @@ const App: React.FC = () => {
 
   const metrics = useMemo(() => {
     const prodData = rawData.filter(r => r['__projectCategory'] === 'production'), globalFrames = new Set<string>();
-    
-    // Fix: Explicitly cast Array.from result to string[] to resolve inference to unknown[]
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[];
     const kFrame = findKey(allKeys, "Frame ID");
     prodData.forEach(r => { const f = String(r[kFrame || ''] || '').trim(); if (f) globalFrames.add(f); });
@@ -493,7 +492,6 @@ const App: React.FC = () => {
 
   const rawHeaders = useMemo(() => {
     if (rawData.length === 0) return [] as string[];
-    // Fix: Cast Array.from result to string[] and ensure base return type is string[] for startsWith method to be valid
     return (Array.from(new Set(rawData.flatMap(row => Object.keys(row)))) as string[])
       .filter(key => !key.startsWith('__'));
   }, [rawData]);
@@ -572,10 +570,10 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {(isDataLoading || isLoading) && rawData.length === 0 ? (
+        {(isDataLoading || isLoading) && projects.length === 0 ? (
           <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
             <div className="w-20 h-20 border-8 border-violet-600/10 border-t-violet-600 rounded-full animate-spin"></div>
-            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting Data Matrix...</h3>
+            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting Shared Data Matrix...</h3>
           </div>
         ) : (
           <div className="space-y-10 pb-20">
