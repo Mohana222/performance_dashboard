@@ -442,7 +442,7 @@ const App: React.FC = () => {
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
     const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
     const combinedPerformanceMap: Record<string, { objects: number }> = {};
-    const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL'>> = {}, uniqueSheetNames = new Set<string>();
+    const employeeData: Record<string, { sno: string, name: string }> = {}, attendanceRecords: Record<string, Record<string, 'Present' | 'Absent' | 'NIL' | 'P(1/2)'>> = {}, uniqueSheetNames = new Set<string>();
     rawData.forEach(row => {
       const category = row['__projectCategory'], sheetSource = String(row['__sheetSource'] || '');
       const isQcSheet = sheetSource.toLowerCase().includes('qc');
@@ -489,10 +489,23 @@ const App: React.FC = () => {
         let snoVal = String(row[sKey] || '').trim();
         const employeeName = String(row[nKey] || '').trim(), loginTimeVal = row[lKey];
         if (employeeName && employeeName !== "undefined" && employeeName !== "") {
-          const status = parseTimeToMinutes(loginTimeVal) !== null ? 'Present' : 'Absent';
+          // Check working hours in column D (index 3)
+          const workingHoursKey = rowKeys[3];
+          const workingHours = parseFloat(String(row[workingHoursKey] || '0'));
+          
+          let status: 'Present' | 'Absent' | 'P(1/2)' = 'Absent';
+          if (parseTimeToMinutes(loginTimeVal) !== null) {
+            status = workingHours < 5 ? 'P(1/2)' : 'Present';
+          }
+
           if (!employeeData[employeeName]) employeeData[employeeName] = { sno: snoVal, name: employeeName };
           if (!attendanceRecords[employeeName]) attendanceRecords[employeeName] = {};
-          if (status === 'Present' || !attendanceRecords[employeeName][sheetSource]) attendanceRecords[employeeName][sheetSource] = status;
+          
+          // Apply precedence: Present > P(1/2) > Absent
+          const currentStatus = attendanceRecords[employeeName][sheetSource];
+          if (status === 'Present' || (status === 'P(1/2)' && currentStatus !== 'Present') || !currentStatus) {
+            attendanceRecords[employeeName][sheetSource] = status;
+          }
         }
       }
     });
@@ -580,12 +593,12 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-[#020617] text-slate-200 overflow-hidden">
       <aside className={`bg-slate-900 border-r border-slate-800 flex flex-col z-20 transition-all duration-300 relative ${isSidebarOpen ? 'w-96' : 'w-0 overflow-hidden'}`}>
-        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar space-y-6 min-w-[24rem]">
-          <h2 className="text-3xl font-black text-white tracking-tighter mb-6">DesiCrew</h2>
-          <nav className="space-y-1">
+        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar space-y-4 min-w-[24rem]">
+          <h2 className="text-3xl font-black text-white tracking-tighter mb-4">DesiCrew</h2>
+          <nav className="space-y-0.5">
             {MENU_ITEMS.map((item) => (
-              <button key={item.id} onClick={() => setCurrentView(item.id)} className={`w-full text-left px-5 py-3.5 rounded-2xl flex items-center gap-4 transition-all ${currentView === item.id ? 'bg-violet-600 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'}`}>
-                <span className="text-2xl">{item.icon}</span><span className="font-bold text-sm">{item.label}</span>
+              <button key={item.id} onClick={() => setCurrentView(item.id)} className={`w-full text-left px-4 py-2 rounded-2xl flex items-center gap-3 transition-all ${currentView === item.id ? 'bg-violet-600 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'}`}>
+                <span className="text-xl">{item.icon}</span><span className="font-bold text-sm">{item.label}</span>
               </button>
             ))}
           </nav>

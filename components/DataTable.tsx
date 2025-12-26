@@ -68,14 +68,15 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
       
       // Attendance Detection
       const columnValues = filteredData.map(row => String(row[header] || '').toUpperCase());
-      const isAttendanceCol = columnValues.some(v => v === 'PRESENT' || v === 'ABSENT' || v === 'NIL');
+      const isAttendanceCol = columnValues.some(v => v === 'PRESENT' || v === 'ABSENT' || v === 'NIL' || v === 'P(1/2)');
       
       if (isAttendanceCol) {
-        const presentCount = columnValues.filter(v => v === 'PRESENT').length;
+        const fullPresentCount = columnValues.filter(v => v === 'PRESENT').length;
+        const halfPresentCount = columnValues.filter(v => v === 'P(1/2)').length;
         const absentCount = columnValues.filter(v => v === 'ABSENT').length;
-        if (presentCount > 0 || absentCount > 0) {
+        if (fullPresentCount > 0 || halfPresentCount > 0 || absentCount > 0) {
           results[header] = { 
-            value: { present: presentCount, absent: absentCount }, 
+            value: { present: fullPresentCount, half: halfPresentCount, absent: absentCount }, 
             label: 'Attendance',
             type: 'attendance'
           };
@@ -108,14 +109,16 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
 
   const aggregateAttendance = useMemo(() => {
     let totalPresent = 0;
+    let totalHalf = 0;
     let totalAbsent = 0;
     (Object.values(totals) as Array<{ value: any; label?: string; type?: 'numeric' | 'attendance' }>).forEach(t => {
       if (t.type === 'attendance') {
         totalPresent += t.value.present;
+        totalHalf += t.value.half;
         totalAbsent += t.value.absent;
       }
     });
-    return { present: totalPresent, absent: totalAbsent };
+    return { present: totalPresent, half: totalHalf, absent: totalAbsent };
   }, [totals]);
 
   const exportToCSV = () => {
@@ -127,6 +130,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
         let val = row[header] ?? '';
         if (val === 'Present') val = 'P';
         else if (val === 'Absent') val = 'L';
+        else if (val === 'P(1/2)') val = 'P(1/2)';
         const escaped = ('' + val).replace(/"/g, '""');
         return `"${escaped}"`;
       });
@@ -138,14 +142,10 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
       let cellValue = '';
       if (totals[header]) {
         if (totals[header].type === 'attendance') {
-          cellValue = `P: ${totals[header].value.present} | L: ${totals[header].value.absent}`;
+          cellValue = `P: ${totals[header].value.present} | H: ${totals[header].value.half} | L: ${totals[header].value.absent}`;
         } else {
           cellValue = String(totals[header].value);
         }
-      }
-      if (idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0)) {
-        const aggrText = `[AGGREGATE -> P: ${aggregateAttendance.present}, L: ${aggregateAttendance.absent}]`;
-        cellValue = cellValue ? `${cellValue} ${aggrText}` : aggrText;
       }
       return `"${cellValue.replace(/"/g, '""')}"`;
     });
@@ -238,7 +238,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
         )}
       </div>
 
-      {/* Table Content - Fixed max-height to show approx 10 rows and forced frozen footer */}
+      {/* Table Content */}
       <div className="overflow-auto flex-1 custom-scrollbar max-h-[640px] relative">
         <table className="w-full text-left border-collapse min-w-full">
           <thead className="sticky top-0 bg-[#1e293b] z-20 shadow-md">
@@ -257,6 +257,7 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                   {headers.map(header => (
                     <td key={header} className="px-8 py-4 text-sm text-slate-300 whitespace-nowrap group-hover:text-white transition-colors">
                       {row[header] === 'Present' ? <span className="text-emerald-400 font-bold">P</span> : 
+                       row[header] === 'P(1/2)' ? <span className="text-amber-400 font-bold">P(1/2)</span> :
                        row[header] === 'Absent' ? <span className="text-rose-400 font-bold">L</span> : 
                        row[header] === 'NIL' ? <span className="text-slate-600 font-medium">{row[header]}</span> : 
                        (row[header] ?? <span className="text-slate-600 font-mono">-</span>)}
@@ -284,20 +285,22 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
                             {totals[header].type === 'attendance' ? (
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span><span className="text-emerald-400 tabular-nums">{totals[header].value.present}</span></div>
+                                <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded font-black tracking-tighter">H</span><span className="text-amber-400 tabular-nums">{totals[header].value.half}</span></div>
                                 <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span><span className="text-rose-400 tabular-nums">{totals[header].value.absent}</span></div>
                               </div>
                             ) : (
                               <div className="flex flex-col">
-                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">COUNT</span>
+                                <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">SUM/COUNT</span>
                                 <span className="text-violet-400 tabular-nums">{totals[header].value.toLocaleString()}</span>
                               </div>
                             )}
                           </div>
                         )}
-                        {idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0) && (
+                        {idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.half > 0 || aggregateAttendance.absent > 0) && (
                           <div className="flex flex-col gap-0.5 mt-1 border-t border-slate-700 pt-1">
                             <span className="text-[9px] text-slate-500 uppercase tracking-tighter mb-0.5">TOTAL AGGR.</span>
                             <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black tracking-tighter">P</span><span className="text-emerald-400 tabular-nums">{aggregateAttendance.present}</span></div>
+                            <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded font-black tracking-tighter">H</span><span className="text-amber-400 tabular-nums">{aggregateAttendance.half}</span></div>
                             <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded font-black tracking-tighter">L</span><span className="text-rose-400 tabular-nums">{aggregateAttendance.absent}</span></div>
                           </div>
                         )}
