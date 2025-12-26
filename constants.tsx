@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export const API_URL = "https://script.google.com/macros/s/AKfycbyvVMYOOMsOh9L0-Q_-cWZr_I2K__45vdvI3cuAIZVQ8yt5tT-Qsf5tQ_88PmH-1G8x/exec";
@@ -25,8 +24,8 @@ export const MENU_ITEMS = [
   { id: 'raw', label: 'Raw Data', icon: '📝' },
   { id: 'annotator', label: 'Annotator Summary', icon: '👤' },
   { id: 'username', label: 'UserName Summary', icon: '🏷️' },
-  { id: 'qc-user', label: 'QC (UserName)', icon: '✅' },
   { id: 'qc-annotator', label: 'QC (Annotator)', icon: '🛡️' },
+  { id: 'qc-user', label: 'QC (UserName)', icon: '✅' },
   { id: 'attendance', label: 'Attendance Summary', icon: '📅' },
 ] as const;
 
