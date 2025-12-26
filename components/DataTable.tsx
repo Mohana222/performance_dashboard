@@ -61,33 +61,6 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     });
   }, [data, headers, searchTerm, selectedFilters]);
 
-  // Export to CSV
-  const exportToCSV = () => {
-    if (filteredData.length === 0) return;
-    
-    const csvRows = [];
-    csvRows.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','));
-    
-    filteredData.forEach(row => {
-      const values = headers.map(header => {
-        const val = row[header] ?? '';
-        const escaped = ('' + val).replace(/"/g, '""');
-        return `"${escaped}"`;
-      });
-      csvRows.push(values.join(','));
-    });
-    
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const totals = useMemo(() => {
     const results: Record<string, { value: any; label?: string; type?: 'numeric' | 'attendance' }> = {};
     headers.forEach(header => {
@@ -145,6 +118,63 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
     });
     return { present: totalPresent, absent: totalAbsent };
   }, [totals]);
+
+  // Export to CSV including Grand Totals
+  const exportToCSV = () => {
+    if (filteredData.length === 0) return;
+    
+    const csvRows = [];
+    // 1. Headers
+    csvRows.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','));
+    
+    // 2. Data Rows
+    filteredData.forEach(row => {
+      const values = headers.map(header => {
+        const val = row[header] ?? '';
+        const escaped = ('' + val).replace(/"/g, '""');
+        return `"${escaped}"`;
+      });
+      csvRows.push(values.join(','));
+    });
+    
+    // 3. Spacer
+    csvRows.push(headers.map(() => '""').join(','));
+
+    // 4. Grand Totals Row
+    const totalsRow = headers.map((header, idx) => {
+      if (idx === 0) return `"GRAND TOTALS"`;
+
+      let cellValue = '';
+      
+      // Check for column-specific totals
+      if (totals[header]) {
+        if (totals[header].type === 'attendance') {
+          cellValue = `Present: ${totals[header].value.present} | Absent: ${totals[header].value.absent}`;
+        } else {
+          cellValue = String(totals[header].value);
+        }
+      }
+
+      // Add Aggregate Attendance for column index 1 if it exists
+      if (idx === 1 && (aggregateAttendance.present > 0 || aggregateAttendance.absent > 0)) {
+        const aggrText = `[ALL SHEETS AGGR -> P: ${aggregateAttendance.present}, L: ${aggregateAttendance.absent}]`;
+        cellValue = cellValue ? `${cellValue} ${aggrText}` : aggrText;
+      }
+
+      return `"${cellValue.replace(/"/g, '""')}"`;
+    });
+    csvRows.push(totalsRow.join(','));
+    
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const activeFilterCount = Object.values(selectedFilters).flat().length;
 
