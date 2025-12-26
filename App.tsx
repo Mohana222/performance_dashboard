@@ -328,6 +328,19 @@ const App: React.FC = () => {
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
+    // Improved clean function to provide "Full Names"
+    const clean = (v: any) => {
+      let val = String(v || '').trim();
+      if (!val || val.toLowerCase() === 'undefined' || val.toLowerCase() === 'nil') return '';
+      // Remove @rprocess.in domain if it exists
+      const nameOnly = val.split('@')[0];
+      // Split by dot, capitalize each segment, and join with space
+      return nameOnly.split('.')
+        .filter(part => part.length > 0)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    };
+
     const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const userMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
@@ -340,8 +353,6 @@ const App: React.FC = () => {
       const isQc = sheet.toLowerCase().includes('qc');
       
       if (category === 'production') {
-        const cleanNameRegex = new RegExp("@rprocess\\.in", "gi");
-        const clean = (v: any) => String(v || '').trim().replace(cleanNameRegex, '');
         const ann = clean(row[kAnn || ''] || row[kUser || '']), usr = clean(row[kUser || '']);
         const fId = String(row[kFrame || ''] || '').trim(), objs = parseFloat(String(row[kObj || ''] || '0')) || 0;
         const qcN = String(row[kQC || ''] || '').trim(), errs = parseFloat(String(row[kErr || ''] || '0')) || 0;
@@ -380,20 +391,11 @@ const App: React.FC = () => {
 
         if (name && name !== "undefined" && name !== "") {
           let status: 'Present' | 'Absent' | 'P(1/2)' = 'Absent';
-          
           if (!hasLogin) {
-            status = 'Absent'; // Display as L
+            status = 'Absent';
           } else {
-            // FIX: ONLY for Half Day condition - Column F added (hasLogin) AND Column D < 5
-            if (workingHrs < 5) {
-              status = 'P(1/2)';
-            } else if (workingHrs > 7) {
-              // Maintain existing "Present" logic for hours > 7
-              status = 'Present';
-            } else {
-              // Preserve other existing Present condition cases
-              status = 'Present';
-            }
+            if (workingHrs < 5) status = 'P(1/2)';
+            else status = 'Present';
           }
 
           if (!empData[name]) empData[name] = { sno, name };
@@ -418,11 +420,11 @@ const App: React.FC = () => {
     }).map((r, i) => { const { _sno, ...rest } = r; return { SNO: (i + 1).toString(), ...rest }; });
 
     return {
-      annotators: Object.entries(annotatorMap).map(([n, d]) => ({ name: n, frameCount: d.frameSet.size, objectCount: d.objects })),
-      users: Object.entries(userMap).map(([n, d]) => ({ name: n, frameCount: d.frameSet.size, objectCount: d.objects })),
-      qcUsers: Object.entries(qcUserMap).map(([n, d]) => ({ name: n, objectCount: d.objects, errorCount: d.errors })),
-      qcAnn: Object.entries(qcAnnMap).map(([n, d]) => ({ name: n, objectCount: d.objects, errorCount: d.errors })),
-      combinedPerformance: Object.entries(combinedPerf).map(([n, d]) => ({ name: n, objectCount: d.objects })),
+      annotators: Object.entries(annotatorMap).map(([n, d]) => ({ NAME: n, FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })),
+      users: Object.entries(userMap).map(([n, d]) => ({ NAME: n, FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })),
+      qcUsers: Object.entries(qcUserMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),
+      qcAnn: Object.entries(qcAnnMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),
+      combinedPerformance: Object.entries(combinedPerf).map(([n, d]) => ({ name: n, value: d.objects })),
       attendance: attFlat, attendanceHeaders: ['SNO', 'NAME', ...sortedSheets]
     };
   }, [rawData]);
@@ -431,7 +433,7 @@ const App: React.FC = () => {
     const prod = rawData.filter(r => r['__projectCategory'] === 'production'), frames = new Set<string>();
     const kF = findKey(Array.from(new Set(rawData.flatMap(r => Object.keys(r)))), "Frame ID");
     prod.forEach(r => { const f = String(r[kF || ''] || '').trim(); if (f) frames.add(f); });
-    const totObj = processedSummaries.annotators.reduce((a, c) => a + c.objectCount, 0), qcObj = processedSummaries.qcAnn.reduce((a, c) => a + c.objectCount, 0), totErr = processedSummaries.qcAnn.reduce((a, c) => a + c.errorCount, 0);
+    const totObj = processedSummaries.annotators.reduce((a, c) => a + c.OBJECTCOUNT, 0), qcObj = processedSummaries.qcAnn.reduce((a, c) => a + c.OBJECTCOUNT, 0), totErr = processedSummaries.qcAnn.reduce((a, c) => a + c.ERRORCOUNT, 0);
     return [
       { label: 'Total Frames', value: frames.size, icon: '🎞️', color: COLORS.primary },
       { label: 'Total Objects', value: totObj.toLocaleString(), icon: '📦', color: COLORS.accent },
@@ -441,7 +443,7 @@ const App: React.FC = () => {
     ];
   }, [processedSummaries, rawData]);
 
-  const pieData = useMemo(() => [...processedSummaries.combinedPerformance].sort((a,b) => b.objectCount - a.objectCount).map(a => ({ name: a.name, value: a.objectCount })), [processedSummaries]);
+  const chartPerfData = useMemo(() => [...processedSummaries.combinedPerformance].sort((a,b) => b.value - a.value).slice(0, 5), [processedSummaries]);
 
   const rawHeaders = useMemo(() => (Array.from(new Set(productionRawData.flatMap(row => Object.keys(row)))) as string[]).filter(k => !k.startsWith('__')), [productionRawData]);
 
@@ -563,16 +565,17 @@ const App: React.FC = () => {
                   <>
                     <SummaryCards metrics={metrics} />
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                      <div className="lg:col-span-3"><OverallPieChart data={pieData} title="Performance Split" /></div>
-                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcAnn} title="Top Quality Rates" /></div>
+                      <div className="lg:col-span-3"><OverallPieChart data={chartPerfData} title="Performance Split" /></div>
+                      {/* Fixed type mismatch by mapping qcAnn data to expected UserData format */}
+                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcAnn.map(u => ({ name: u.NAME, objectCount: u.OBJECTCOUNT, errorCount: u.ERRORCOUNT }))} title="Top Quality Rates" /></div>
                     </div>
                   </>
                 )}
                 {currentView === 'raw' && <DataTable title="Consolidated Raw Intelligence" headers={rawHeaders} data={productionRawData} filterColumns={['Task', 'Label Set', 'Annotator Name', 'UserName', 'DATE']} />}
-                {currentView === 'annotator' && <DataTable title="Annotator Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.annotators} filterColumns={['name']} />}
-                {currentView === 'username' && <DataTable title="Username Output" headers={['name', 'frameCount', 'objectCount']} data={processedSummaries.users} filterColumns={['name']} />}
-                {currentView === 'qc-annotator' && <DataTable title="QC (Annotator)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcAnn} filterColumns={['name']} />}
-                {currentView === 'qc-user' && <DataTable title="QC (UserName)" headers={['name', 'objectCount', 'errorCount']} data={processedSummaries.qcUsers} filterColumns={['name']} />}
+                {currentView === 'annotator' && <DataTable title="Annotator Summary" headers={['NAME', 'FRAMECOUNT', 'OBJECTCOUNT']} data={processedSummaries.annotators} filterColumns={['NAME']} />}
+                {currentView === 'username' && <DataTable title="UserName Summary" headers={['NAME', 'FRAMECOUNT', 'OBJECTCOUNT']} data={processedSummaries.users} filterColumns={['NAME']} />}
+                {currentView === 'qc-annotator' && <DataTable title="QC (Annotator)" headers={['NAME', 'OBJECTCOUNT', 'ERRORCOUNT']} data={processedSummaries.qcAnn} filterColumns={['NAME']} />}
+                {currentView === 'qc-user' && <DataTable title="QC (UserName)" headers={['NAME', 'OBJECTCOUNT', 'ERRORCOUNT']} data={processedSummaries.qcUsers} filterColumns={['NAME']} />}
                 {currentView === 'attendance' && <DataTable title="Attendance Summary" headers={processedSummaries.attendanceHeaders} data={processedSummaries.attendance} filterColumns={['NAME']} />}
               </>
             )}
