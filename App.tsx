@@ -331,7 +331,9 @@ const App: React.FC = () => {
 
   const processedSummaries = useMemo(() => {
     if (!rawData.length) return { annotators: [], users: [], qcUsers: [], qcAnn: [], combinedPerformance: [], attendance: [], attendanceHeaders: [] };
-    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
+    
+    // Fix: Explicitly cast flatMap result to string[] to resolve "Argument of type 'unknown[]' is not assignable to parameter of type 'string[]'" error
+    const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row)) as string[]));
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
     const clean = (v: any) => {
@@ -432,7 +434,9 @@ const App: React.FC = () => {
 
   const metrics = useMemo(() => {
     const prod = rawData.filter(r => r['__projectCategory'] === 'production');
-    const allKeys = Array.from(new Set(rawData.flatMap(r => Object.keys(r))));
+    
+    // Fix: Explicitly cast flatMap result to string[] to resolve "Argument of type 'unknown[]' is not assignable to parameter of type 'string[]'" error
+    const allKeys = Array.from(new Set(rawData.flatMap(r => Object.keys(r)) as string[]));
     const kF = findKey(allKeys, "Frame ID");
     const kQC = findKey(allKeys, "Internal QC Name");
     const kObj = findKey(allKeys, "Number of Object Annotated");
@@ -468,7 +472,7 @@ const App: React.FC = () => {
     ];
   }, [rawData]);
 
-  const chartPerfData = useMemo(() => [...processedSummaries.combinedPerformance].sort((a,b) => b.value - a.value).slice(0, 5), [processedSummaries]);
+  const chartPerfData = useMemo(() => [...processedSummaries.combinedPerformance].sort((a,b) => b.value - a.value), [processedSummaries]);
 
   const rawHeaders = useMemo(() => (Array.from(new Set(productionRawData.flatMap(row => Object.keys(row)))) as string[]).filter(k => !k.startsWith('__')), [productionRawData]);
 

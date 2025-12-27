@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 
 interface DataTableProps {
@@ -106,7 +107,8 @@ const DataTable: React.FC<DataTableProps> = ({ headers, data, title, filterColum
   const overallAttendanceTotal = useMemo(() => {
     const summary = { present: 0, half: 0, absent: 0 };
     let hasAttendance = false;
-    Object.values(totals).forEach(t => {
+    // Fix: Explicitly cast Object.values(totals) as any[] to solve unknown type property access errors
+    (Object.values(totals) as any[]).forEach(t => {
       if (t.type === 'attendance') {
         summary.present += t.value.present;
         summary.half += t.value.half;
