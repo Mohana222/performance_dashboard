@@ -511,16 +511,16 @@ const App: React.FC = () => {
       <StarField />
       
       <aside className={`bg-slate-900 border-r border-slate-800 flex flex-col z-20 transition-all duration-300 relative ${isSidebarOpen ? 'w-96' : 'w-0 overflow-hidden'}`}>
-        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar min-w-[24rem]">
-          <h2 className="text-3xl font-black text-white mb-8">DesiCrew</h2>
-          <nav className="space-y-1 mb-8">
+        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar min-w-[24rem]">
+          <h2 className="text-3xl font-black text-white mb-5">DesiCrew</h2>
+          <nav className="space-y-1 mb-5">
             {MENU_ITEMS.map((m) => (
-              <button key={m.id} onClick={() => setCurrentView(m.id as ViewType)} className={`w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all ${currentView === m.id ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
+              <button key={m.id} onClick={() => setCurrentView(m.id as ViewType)} className={`w-full text-left px-4 py-2.5 rounded-2xl flex items-center gap-3 transition-all ${currentView === m.id ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <span className="text-xl">{m.icon}</span><span className="font-bold">{m.label}</span>
               </button>
             ))}
           </nav>
-          <div className="space-y-6">
+          <div className="space-y-3">
             <MultiSelect 
               title="SELECT SPREADSHEETS (PRODUCTION)" 
               options={projects.filter(p => p.category === 'production').map(p => p.id)} 
@@ -550,10 +550,10 @@ const App: React.FC = () => {
             )}
           </div>
         </div>
-        <div className="p-8 bg-slate-900 border-t border-slate-800 min-w-[24rem]">
+        <div className="p-6 bg-slate-900 border-t border-slate-800 min-w-[24rem]">
           <button 
             onClick={() => setShowProjectManager(true)} 
-            className="w-full bg-slate-800/40 py-3.5 rounded-2xl text-sm font-bold border border-slate-700/60 shadow-xl flex items-center justify-center gap-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+            className="w-full bg-slate-800/40 py-3 rounded-2xl text-sm font-bold border border-slate-700/60 shadow-xl flex items-center justify-center gap-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
           >
             ⚙️ Project Setup
           </button>
