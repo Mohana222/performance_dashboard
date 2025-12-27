@@ -302,7 +302,21 @@ const App: React.FC = () => {
     } catch (err) { setLoginError('Connection Refused'); } finally { setIsLoading(false); }
   };
 
-  const handleLogout = () => { sessionStorage.removeItem('ok'); setIsAuthenticated(false); setRawData([]); };
+  const handleLogout = () => { 
+    sessionStorage.removeItem('ok'); 
+    setIsAuthenticated(false); 
+    setRawData([]); 
+    setUsername(''); 
+    setPassword('');
+    setShowPassword(false);
+    setLoginError('');
+    // Explicitly clear selection states
+    setSelectedProdProjectIds([]);
+    setSelectedHourlyProjectIds([]);
+    setSelectedSheetIds([]);
+    setAvailableSheets([]);
+    setCurrentView('overview');
+  };
 
   const addProject = async (p: Omit<Project, 'id' | 'color'>) => {
     const cols = [COLORS.primary, COLORS.secondary, COLORS.accent];
@@ -348,7 +362,7 @@ const App: React.FC = () => {
       const isQc = sheet.toLowerCase().includes('qc');
       
       if (category === 'production') {
-        const ann = clean(row[kAnn || ''] || row[kUser || '']), usr = clean(row[kUser || '']);
+        const ann = clean(row[kAnn || ''] || row[kUser || '']), usr = kUser ? clean(row[kUser]) : '';
         const fId = String(row[kFrame || ''] || '').trim(), objs = parseFloat(String(row[kObj || ''] || '0')) || 0;
         const qcN = String(row[kQC || ''] || '').trim(), errs = parseFloat(String(row[kErr || ''] || '0')) || 0;
         const hasValidQc = qcN && qcN.toLowerCase() !== 'nil' && qcN.toLowerCase() !== 'undefined' && qcN !== '-' && qcN !== '0';
@@ -361,7 +375,7 @@ const App: React.FC = () => {
             qcAnnMap[ann].objects += objs; qcAnnMap[ann].errors += errs;
           }
         }
-        if (usr) {
+        if (kUser && usr) {
           if (!userMap[usr]) userMap[usr] = { frameSet: new Set(), objects: 0 };
           if (fId) userMap[usr].frameSet.add(fId); userMap[usr].objects += objs;
           if (hasValidQc && !isQc) {
@@ -413,8 +427,9 @@ const App: React.FC = () => {
 
     return {
       annotators: Object.entries(annotatorMap).map(([n, d]) => ({ NAME: n, FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })),
-      users: Object.entries(userMap).map(([n, d]) => ({ NAME: n, FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })),
-      qcUsers: Object.entries(qcUserMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),
+      // Updated to remove '@rprocess.in' suffix only for UserName Summary and QC (UserName)
+      users: kUser ? Object.entries(userMap).map(([n, d]) => ({ NAME: n.split('@')[0], FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })) : [],
+      qcUsers: kUser ? Object.entries(qcUserMap).map(([n, d]) => ({ NAME: n.split('@')[0], OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })) : [],
       qcAnn: Object.entries(qcAnnMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),
       combinedPerformance: Object.entries(combinedPerf).map(([n, d]) => ({ name: n, value: d.objects })),
       attendance: attFlat, attendanceHeaders: ['SNO', 'NAME', ...sortedSheets]
@@ -442,7 +457,6 @@ const App: React.FC = () => {
       totObj += objs;
 
       const qcN = String(r[kQC || ''] || '').trim();
-      // Logic for QC Total Objects: Count objects only if Internal QC Name is filled with a valid name
       const hasQcName = qcN && qcN.toLowerCase() !== 'nil' && qcN.toLowerCase() !== 'undefined' && qcN !== '-' && qcN !== '0';
       if (hasQcName) {
         qcObj += objs;

@@ -26,6 +26,46 @@ interface UserQualityChartProps {
   title: string;
 }
 
+const CustomXAxisTick = (props: any) => {
+  const { x, y, payload } = props;
+  const name = payload.value;
+  
+  if (name.includes('@')) {
+    const parts = name.split('@');
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text 
+          x={0} 
+          y={0} 
+          textAnchor="middle" 
+          fill="#94a3b8" 
+          fontSize={8.5} 
+          fontWeight={700}
+        >
+          <tspan x="0" dy="12">{parts[0]}</tspan>
+          <tspan x="0" dy="12">@{parts[1]}</tspan>
+        </text>
+      </g>
+    );
+  }
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text 
+        x={0} 
+        y={0} 
+        dy={12}
+        textAnchor="middle" 
+        fill="#94a3b8" 
+        fontSize={9} 
+        fontWeight={700}
+      >
+        {name}
+      </text>
+    </g>
+  );
+};
+
 const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
   // Sort by a composite score to find the "Top Performers"
   // Priority: High volume with high quality
@@ -95,15 +135,14 @@ const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
       <div className="flex-1 min-h-0">
         {chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 40 }}>
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 50 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.5} />
               <XAxis 
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} 
+                tick={<CustomXAxisTick />} 
                 interval={0}
-                dy={15}
               />
               <YAxis 
                 yAxisId="left"

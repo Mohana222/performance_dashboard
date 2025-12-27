@@ -29,6 +29,16 @@ const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selecte
   const selectAll = () => onChange(options);
   const deselectAll = () => onChange([]);
 
+  const handleSelectGroup = (groupOptions: string[]) => {
+    const nextSelected = new Set([...selected, ...groupOptions]);
+    onChange(Array.from(nextSelected));
+  };
+
+  const handleDeselectGroup = (groupOptions: string[]) => {
+    const groupSet = new Set(groupOptions);
+    onChange(selected.filter(id => !groupSet.has(id)));
+  };
+
   // If no groups are provided, treat all as one flat list
   const displayGroups = useMemo(() => {
     if (groups && groups.length > 0) return groups;
@@ -68,46 +78,79 @@ const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selecte
 
         {/* Grouped Grid Content */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-950/30 space-y-12">
-          {displayGroups.map((group, gIdx) => (
-            <div key={gIdx} className="space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="h-[1px] flex-1 bg-slate-800/50"></div>
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400 flex items-center gap-3">
-                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color || '#8B5CF6' }}></span>
-                   {group.title}
-                </h3>
-                <div className="h-[1px] flex-1 bg-slate-800/50"></div>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {group.options.map(option => (
-                  <button
-                    key={option}
-                    onClick={() => toggleSelection(option)}
-                    className={`flex flex-col items-start p-6 rounded-3xl border-2 transition-all group text-left min-h-[140px] justify-between ${
-                      selected.includes(option)
-                        ? 'bg-violet-600 border-violet-400 text-white shadow-xl ring-2 ring-violet-500/20'
-                        : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-800 shadow-inner'
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-4 transition-all flex-shrink-0 ${
-                      selected.includes(option) ? 'bg-white text-violet-600 scale-110 shadow-lg' : 'bg-slate-800 border border-slate-700'
-                    }`}>
-                      {selected.includes(option) ? <span className="font-black text-sm">✓</span> : ''}
+          {displayGroups.map((group, gIdx) => {
+            const groupSelectedCount = group.options.filter(opt => selected.includes(opt)).length;
+            const isGroupAllSelected = groupSelectedCount === group.options.length;
+
+            return (
+              <div key={gIdx} className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <div className="h-[1px] flex-1 bg-slate-800/50"></div>
+                  <div className="flex items-center gap-6">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400 flex items-center gap-3">
+                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color || '#8B5CF6' }}></span>
+                       {group.title}
+                       <span className="text-slate-500 lowercase font-medium tracking-normal ml-1">({groupSelectedCount}/{group.options.length})</span>
+                    </h3>
+                    
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleSelectGroup(group.options)}
+                        className={`text-[9px] font-black px-2.5 py-1 rounded-lg border transition-all active:scale-95 ${
+                          isGroupAllSelected 
+                            ? 'bg-violet-600 border-violet-500 text-white opacity-50 cursor-default' 
+                            : 'bg-violet-600/10 text-violet-400 border-violet-500/30 hover:bg-violet-600 hover:text-white'
+                        }`}
+                        disabled={isGroupAllSelected}
+                      >
+                        SELECT ALL
+                      </button>
+                      <button 
+                        onClick={() => handleDeselectGroup(group.options)}
+                        className={`text-[9px] font-black px-2.5 py-1 rounded-lg border transition-all active:scale-95 ${
+                          groupSelectedCount === 0
+                            ? 'bg-slate-800 border-slate-700 text-slate-500 opacity-50 cursor-default'
+                            : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30'
+                        }`}
+                        disabled={groupSelectedCount === 0}
+                      >
+                        CLEAR ALL
+                      </button>
                     </div>
-                    <div className="w-full">
-                      <span className={`block font-black text-sm mb-1 break-words leading-tight ${selected.includes(option) ? 'text-white' : 'text-slate-100'}`}>
-                        {labels ? labels[option] : option}
-                      </span>
-                      <span className={`text-[10px] font-bold uppercase tracking-widest ${selected.includes(option) ? 'text-violet-200' : 'text-slate-500'}`}>
-                        {selected.includes(option) ? 'Sync Enabled' : 'Inactive Source'}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                  </div>
+                  <div className="h-[1px] flex-1 bg-slate-800/50"></div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {group.options.map(option => (
+                    <button
+                      key={option}
+                      onClick={() => toggleSelection(option)}
+                      className={`flex flex-col items-start p-6 rounded-3xl border-2 transition-all group text-left min-h-[140px] justify-between ${
+                        selected.includes(option)
+                          ? 'bg-violet-600 border-violet-400 text-white shadow-xl ring-2 ring-violet-500/20'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-800 shadow-inner'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-4 transition-all flex-shrink-0 ${
+                        selected.includes(option) ? 'bg-white text-violet-600 scale-110 shadow-lg' : 'bg-slate-800 border border-slate-700'
+                      }`}>
+                        {selected.includes(option) ? <span className="font-black text-sm">✓</span> : ''}
+                      </div>
+                      <div className="w-full">
+                        <span className={`block font-black text-sm mb-1 break-words leading-tight ${selected.includes(option) ? 'text-white' : 'text-slate-100'}`}>
+                          {labels ? labels[option] : option}
+                        </span>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${selected.includes(option) ? 'text-violet-200' : 'text-slate-500'}`}>
+                          {selected.includes(option) ? 'Sync Enabled' : 'Inactive Source'}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           
           {options.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
