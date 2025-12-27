@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const API_URL = "https://script.google.com/macros/s/AKfycbyvVMYOOMsOh9L0-Q_-cWZr_I2K__45vdvI3cuAIZVQ8yt5tT-Qsf5tQ_88PmH-1G8x/exec";
+export const API_URL = "https://script.google.com/macros/s/AKfycbyDN9AJSlXbx9OoeTZJceROf1Rlgx9H-1sEbmixTvYSPPDcjZeLBhmmkQdgeiHinS0B/exec";
 
 export const APP_VERSION = "1.1.26";
 
