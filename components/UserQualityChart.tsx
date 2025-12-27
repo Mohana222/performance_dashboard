@@ -14,10 +14,11 @@ import {
 } from 'recharts';
 import { COLORS } from '../constants';
 
+// Fixed UserData interface to match the uppercase keys provided by App.tsx (NAME, OBJECTCOUNT, ERRORCOUNT)
 interface UserData {
-  name: string;
-  objectCount: number;
-  errorCount: number;
+  NAME: string;
+  OBJECTCOUNT: number;
+  ERRORCOUNT: number;
 }
 
 interface UserQualityChartProps {
@@ -30,17 +31,18 @@ const UserQualityChart: React.FC<UserQualityChartProps> = ({ data, title }) => {
   // Priority: High volume with high quality
   const chartData = useMemo(() => {
     const processed = data
-      .filter(u => u.objectCount > 0)
+      // Updated to use uppercase properties matching the new UserData interface
+      .filter(u => u.OBJECTCOUNT > 0)
       .map(u => {
-        const quality = Number((((u.objectCount - u.errorCount) / Math.max(u.objectCount, 1)) * 100).toFixed(2));
+        const quality = Number((((u.OBJECTCOUNT - u.ERRORCOUNT) / Math.max(u.OBJECTCOUNT, 1)) * 100).toFixed(2));
         return {
-          name: u.name,
-          objects: u.objectCount,
-          errors: u.errorCount,
+          name: u.NAME,
+          objects: u.OBJECTCOUNT,
+          errors: u.ERRORCOUNT,
           quality: quality,
           // Composite Score: (Volume weight 40%) * (Quality weight 60%)
           // This prevents someone with 1 object and 100% quality from beating high-volume pros.
-          score: (u.objectCount) * (quality / 100)
+          score: (u.OBJECTCOUNT) * (quality / 100)
         };
       });
 

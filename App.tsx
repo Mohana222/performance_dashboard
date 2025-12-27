@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ViewType, RawRow, Project } from './types';
 import { getSheetList, getSheetData, login as apiLogin, findKey, fetchGlobalProjects, saveGlobalProjects } from './services/api';
@@ -201,7 +202,7 @@ const App: React.FC = () => {
             }));
           } catch (err) {}
         }));
-        if (allNames.length > 0) setBirthdayMessage(`Happy Birthday! ${Array.from(new Set(allNames)).join(', ')} 🎂`);
+        if (allNames.length > 0) setBirthdayMessage(`Happy Birthday! ${Array.from(new Set(allNames)).join(', ')} 🎈`);
       };
       scanAllBirthdays();
     }
@@ -328,17 +329,11 @@ const App: React.FC = () => {
     const allKeys = Array.from(new Set(rawData.flatMap(row => Object.keys(row))));
     const kAnn = findKey(allKeys, "Annotator Name"), kUser = findKey(allKeys, "UserName"), kFrame = findKey(allKeys, "Frame ID"), kObj = findKey(allKeys, "Number of Object Annotated"), kQC = findKey(allKeys, "Internal QC Name"), kErr = findKey(allKeys, "Internal Polygon Error Count");
     
-    // Improved clean function to provide "Full Names"
     const clean = (v: any) => {
       let val = String(v || '').trim();
       if (!val || val.toLowerCase() === 'undefined' || val.toLowerCase() === 'nil') return '';
-      // Remove @rprocess.in domain if it exists
-      const nameOnly = val.split('@')[0];
-      // Split by dot, capitalize each segment, and join with space
-      return nameOnly.split('.')
-        .filter(part => part.length > 0)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
+      const namePart = val.split('@')[0];
+      return `${namePart}@rprocess.in`;
     };
 
     const annotatorMap: Record<string, { frameSet: Set<string>, objects: number }> = {};
@@ -356,11 +351,12 @@ const App: React.FC = () => {
         const ann = clean(row[kAnn || ''] || row[kUser || '']), usr = clean(row[kUser || '']);
         const fId = String(row[kFrame || ''] || '').trim(), objs = parseFloat(String(row[kObj || ''] || '0')) || 0;
         const qcN = String(row[kQC || ''] || '').trim(), errs = parseFloat(String(row[kErr || ''] || '0')) || 0;
+        const hasValidQc = qcN && qcN.toLowerCase() !== 'nil' && qcN.toLowerCase() !== 'undefined' && qcN !== '-' && qcN !== '0';
         
         if (ann) {
           if (!annotatorMap[ann]) annotatorMap[ann] = { frameSet: new Set(), objects: 0 };
           if (fId) annotatorMap[ann].frameSet.add(fId); annotatorMap[ann].objects += objs;
-          if ((qcN || (kErr && row[kErr] != null)) && !isQc) {
+          if (hasValidQc && !isQc) {
             if (!qcAnnMap[ann]) qcAnnMap[ann] = { objects: 0, errors: 0 };
             qcAnnMap[ann].objects += objs; qcAnnMap[ann].errors += errs;
           }
@@ -368,7 +364,7 @@ const App: React.FC = () => {
         if (usr) {
           if (!userMap[usr]) userMap[usr] = { frameSet: new Set(), objects: 0 };
           if (fId) userMap[usr].frameSet.add(fId); userMap[usr].objects += objs;
-          if ((qcN || (kErr && row[kErr] != null)) && !isQc) {
+          if (hasValidQc && !isQc) {
             if (!qcUserMap[usr]) qcUserMap[usr] = { objects: 0, errors: 0 };
             qcUserMap[usr].objects += objs; qcUserMap[usr].errors += errs;
           }
@@ -391,12 +387,8 @@ const App: React.FC = () => {
 
         if (name && name !== "undefined" && name !== "") {
           let status: 'Present' | 'Absent' | 'P(1/2)' = 'Absent';
-          if (!hasLogin) {
-            status = 'Absent';
-          } else {
-            if (workingHrs < 5) status = 'P(1/2)';
-            else status = 'Present';
-          }
+          if (!hasLogin) status = 'Absent';
+          else status = workingHrs < 5 ? 'P(1/2)' : 'Present';
 
           if (!empData[name]) empData[name] = { sno, name };
           if (!attRecords[name]) attRecords[name] = {};
@@ -430,10 +422,35 @@ const App: React.FC = () => {
   }, [rawData]);
 
   const metrics = useMemo(() => {
-    const prod = rawData.filter(r => r['__projectCategory'] === 'production'), frames = new Set<string>();
-    const kF = findKey(Array.from(new Set(rawData.flatMap(r => Object.keys(r)))), "Frame ID");
-    prod.forEach(r => { const f = String(r[kF || ''] || '').trim(); if (f) frames.add(f); });
-    const totObj = processedSummaries.annotators.reduce((a, c) => a + c.OBJECTCOUNT, 0), qcObj = processedSummaries.qcAnn.reduce((a, c) => a + c.OBJECTCOUNT, 0), totErr = processedSummaries.qcAnn.reduce((a, c) => a + c.ERRORCOUNT, 0);
+    const prod = rawData.filter(r => r['__projectCategory'] === 'production');
+    const allKeys = Array.from(new Set(rawData.flatMap(r => Object.keys(r))));
+    const kF = findKey(allKeys, "Frame ID");
+    const kQC = findKey(allKeys, "Internal QC Name");
+    const kObj = findKey(allKeys, "Number of Object Annotated");
+    const kErr = findKey(allKeys, "Internal Polygon Error Count");
+
+    const frames = new Set<string>();
+    let totObj = 0;
+    let qcObj = 0;
+    let totErr = 0;
+
+    prod.forEach(r => {
+      const f = String(r[kF || ''] || '').trim();
+      if (f) frames.add(f);
+
+      const objs = parseFloat(String(r[kObj || ''] || '0')) || 0;
+      totObj += objs;
+
+      const qcN = String(r[kQC || ''] || '').trim();
+      // Logic for QC Total Objects: Count objects only if Internal QC Name is filled with a valid name
+      const hasQcName = qcN && qcN.toLowerCase() !== 'nil' && qcN.toLowerCase() !== 'undefined' && qcN !== '-' && qcN !== '0';
+      if (hasQcName) {
+        qcObj += objs;
+        const errs = parseFloat(String(r[kErr || ''] || '0')) || 0;
+        totErr += errs;
+      }
+    });
+
     return [
       { label: 'Total Frames', value: frames.size, icon: '🎞️', color: COLORS.primary },
       { label: 'Total Objects', value: totObj.toLocaleString(), icon: '📦', color: COLORS.accent },
@@ -441,7 +458,7 @@ const App: React.FC = () => {
       { label: 'Total Errors', value: totErr, icon: '⚠️', color: COLORS.danger },
       { label: 'Quality Rate', value: qcObj > 0 ? (((qcObj - totErr) / qcObj) * 100).toFixed(2) + '%' : '0%', icon: '✨', color: COLORS.success }
     ];
-  }, [processedSummaries, rawData]);
+  }, [rawData]);
 
   const chartPerfData = useMemo(() => [...processedSummaries.combinedPerformance].sort((a,b) => b.value - a.value).slice(0, 5), [processedSummaries]);
 
@@ -476,13 +493,15 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-[#020617] text-slate-200 overflow-hidden">
+    <div className="flex h-screen bg-[#020617] text-slate-200 overflow-hidden relative">
+      <StarField />
+      
       <aside className={`bg-slate-900 border-r border-slate-800 flex flex-col z-20 transition-all duration-300 relative ${isSidebarOpen ? 'w-96' : 'w-0 overflow-hidden'}`}>
         <div className="p-8 overflow-y-auto flex-1 custom-scrollbar min-w-[24rem]">
           <h2 className="text-3xl font-black text-white mb-8">DesiCrew</h2>
           <nav className="space-y-1 mb-8">
             {MENU_ITEMS.map((m) => (
-              <button key={m.id} onClick={() => setCurrentView(m.id)} className={`w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all ${currentView === m.id ? 'bg-violet-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+              <button key={m.id} onClick={() => setCurrentView(m.id as ViewType)} className={`w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all ${currentView === m.id ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <span className="text-xl">{m.icon}</span><span className="font-bold">{m.label}</span>
               </button>
             ))}
@@ -531,14 +550,15 @@ const App: React.FC = () => {
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={`transition-transform ${isSidebarOpen ? '' : 'rotate-180'}`}><polyline points="15 18 9 12 15 6"></polyline></svg>
       </button>
 
-      <main className="flex-1 overflow-auto bg-slate-950 p-6 md:p-10 custom-scrollbar relative">
+      <main className="flex-1 overflow-auto bg-slate-950 p-6 md:p-10 custom-scrollbar relative z-10">
         <header className="flex justify-between items-start mb-10 ml-12">
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-white tracking-tight">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Overview'}</h1>
+            <h1 className="text-3xl font-black text-white tracking-tight">{MENU_ITEMS.find(m => m.id === currentView)?.label || 'Overview'}</h1>
+            <p className="text-slate-400 text-sm mt-1">Operational analytics and performance monitoring</p>
           </div>
           <div className="flex items-center gap-6">
             {birthdayMessage && (
-              <div className="bg-gradient-to-r from-violet-600/20 to-pink-600/20 border border-violet-500/30 px-6 py-3 rounded-2xl flex items-center gap-3 animate-fade-up shadow-[0_0_20px_rgba(139,92,246,0.1)]">
+              <div className="bg-gradient-to-r from-violet-600/20 to-pink-600/20 border border-violet-500/30 px-6 py-3 rounded-2xl flex items-center gap-3 animate-fade-up shadow-lg">
                 <span className="text-lg animate-bounce">🎈</span>
                 <span className="text-sm font-black tracking-tight shimmer-text">{birthdayMessage}</span>
               </div>
@@ -550,24 +570,24 @@ const App: React.FC = () => {
         {(isDataLoading || isLoading) && projects.length === 0 ? (
           <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
             <div className="w-20 h-20 border-8 border-violet-600/10 border-t-violet-600 rounded-full animate-spin"></div>
-            <h3 className="text-white font-bold text-xl uppercase tracking-widest">Connecting...</h3>
+            <h3 className="text-white font-black text-xl uppercase tracking-widest">Syncing Data Streams...</h3>
           </div>
         ) : (
-          <div className="space-y-10 pb-20">
+          <div className="space-y-10 pb-20 animate-in fade-in duration-700">
             {combinedSelectedProjectIds.length === 0 || selectedSheetIds.length === 0 ? (
               <div className="h-[40vh] flex flex-col items-center justify-center border-4 border-dashed border-slate-900 rounded-[3rem] text-slate-700 space-y-4">
                 <div className="text-6xl grayscale opacity-20">🖱️</div>
                 <h3 className="text-slate-400 font-bold text-lg uppercase tracking-widest">No Active Data Sources</h3>
+                <p className="text-slate-600 text-sm">Please select projects and sheets from the sidebar to begin.</p>
               </div>
             ) : (
               <>
                 {currentView === 'overview' && (
                   <>
                     <SummaryCards metrics={metrics} />
-                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                      <div className="lg:col-span-3"><OverallPieChart data={chartPerfData} title="Performance Split" /></div>
-                      {/* Fixed type mismatch by mapping qcAnn data to expected UserData format */}
-                      <div className="lg:col-span-2"><UserQualityChart data={processedSummaries.qcAnn.map(u => ({ name: u.NAME, objectCount: u.OBJECTCOUNT, errorCount: u.ERRORCOUNT }))} title="Top Quality Rates" /></div>
+                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
+                      <div className="xl:col-span-3"><OverallPieChart data={chartPerfData} title="Performance Split" /></div>
+                      <div className="xl:col-span-2"><UserQualityChart data={processedSummaries.qcAnn} title="Top Quality Rates" /></div>
                     </div>
                   </>
                 )}
