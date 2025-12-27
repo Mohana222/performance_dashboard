@@ -355,7 +355,7 @@ const App: React.FC = () => {
     const qcUserMap: Record<string, { objects: number, errors: number }> = {};
     const qcAnnMap: Record<string, { objects: number, errors: number }> = {};
     const combinedPerf: Record<string, { objects: number }> = {};
-    const empData: Record<string, { sno: string, name: string }> = {}, attRecords: Record<string, Record<string, 'Present' | 'Absent' | 'P(1/2)'>> = {}, uniqueSheets = new Set<string>();
+    const empData: Record<string, { sno: string, name: string, empCode: string }> = {}, attRecords: Record<string, Record<string, 'Present' | 'Absent' | 'P(1/2)'>> = {}, uniqueSheets = new Set<string>();
 
     rawData.forEach(row => {
       const category = row['__projectCategory'], sheet = String(row['__sheetSource'] || '');
@@ -394,6 +394,11 @@ const App: React.FC = () => {
         uniqueSheets.add(sheet);
         const keys = Object.keys(row);
         const sno = String(row[keys[0]] || '').trim(), name = String(row[keys[1]] || '').trim();
+        
+        // Find Emp Code - checking for explicit header or index 2
+        const kEmpCode = findKey(keys, "Employee Code") || findKey(keys, "Emp Code") || findKey(keys, "Emp ID") || keys[2];
+        const empCode = String(row[kEmpCode] || '').trim();
+
         const workingHrsRaw = row[keys[3]];
         const workingHrs = parseFloat(String(workingHrsRaw || '0')) || 0;
         const logTime = row[keys[5]];
@@ -404,7 +409,7 @@ const App: React.FC = () => {
           if (!hasLogin) status = 'Absent';
           else status = workingHrs < 5 ? 'P(1/2)' : 'Present';
 
-          if (!empData[name]) empData[name] = { sno, name };
+          if (!empData[name]) empData[name] = { sno, name, empCode };
           if (!attRecords[name]) attRecords[name] = {};
           
           const cur = attRecords[name][sheet];
@@ -417,7 +422,7 @@ const App: React.FC = () => {
 
     const sortedSheets = Array.from(uniqueSheets).sort((a, b) => parseSheetDate(a) - parseSheetDate(b) || a.localeCompare(b, undefined, { numeric: true }));
     const attFlat = Object.keys(empData).map(name => {
-      const m = empData[name], r: Record<string, string> = { _sno: m.sno, NAME: m.name };
+      const m = empData[name], r: Record<string, string> = { _sno: m.sno, NAME: m.name, 'EMP CODE': m.empCode };
       sortedSheets.forEach(s => r[s] = attRecords[name][s] || 'NIL');
       return r;
     }).sort((a, b) => {
@@ -432,7 +437,7 @@ const App: React.FC = () => {
       qcUsers: kUser ? Object.entries(qcUserMap).map(([n, d]) => ({ NAME: n.split('@')[0], OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })) : [],
       qcAnn: Object.entries(qcAnnMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),
       combinedPerformance: Object.entries(combinedPerf).map(([n, d]) => ({ name: n, value: d.objects })),
-      attendance: attFlat, attendanceHeaders: ['SNO', 'NAME', ...sortedSheets]
+      attendance: attFlat, attendanceHeaders: ['SNO', 'NAME', 'EMP CODE', ...sortedSheets]
     };
   }, [rawData]);
 
@@ -610,7 +615,7 @@ const App: React.FC = () => {
                 {currentView === 'username' && <DataTable title="UserName Summary" headers={['NAME', 'FRAMECOUNT', 'OBJECTCOUNT']} data={processedSummaries.users} filterColumns={['NAME']} />}
                 {currentView === 'qc-annotator' && <DataTable title="QC (Annotator)" headers={['NAME', 'OBJECTCOUNT', 'ERRORCOUNT']} data={processedSummaries.qcAnn} filterColumns={['NAME']} />}
                 {currentView === 'qc-user' && <DataTable title="QC (UserName)" headers={['NAME', 'OBJECTCOUNT', 'ERRORCOUNT']} data={processedSummaries.qcUsers} filterColumns={['NAME']} />}
-                {currentView === 'attendance' && <DataTable title="Attendance Summary" headers={processedSummaries.attendanceHeaders} data={processedSummaries.attendance} filterColumns={['NAME']} />}
+                {currentView === 'attendance' && <DataTable title="Attendance Summary" headers={processedSummaries.attendanceHeaders} data={processedSummaries.attendance} filterColumns={['NAME', 'EMP CODE']} />}
               </>
             )}
           </div>
