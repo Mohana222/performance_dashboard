@@ -12,8 +12,6 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-
-
 const parseTimeToMinutes = (val: any): number | null => {
   if (val === null || val === undefined) return null;
   if (val instanceof Date) return val.getHours() * 60 + val.getMinutes();
@@ -155,10 +153,15 @@ const App: React.FC = () => {
           if (Array.isArray(globalProjects) && globalProjects.length > 0) {
             setProjects(globalProjects);
           } else {
-            setProjects(SEED_PROJECTS);
-            await saveGlobalProjects(API_URL, SEED_PROJECTS);
+            // Dashboard starts blank as per request
+            setProjects([]);
           }
-        } catch (err) { console.error("DB Load error"); } finally { setIsLoading(false); }
+        } catch (err) { 
+          console.error("DB Load error"); 
+          setProjects([]);
+        } finally { 
+          setIsLoading(false); 
+        }
       };
       loadProjects();
     }
@@ -201,14 +204,16 @@ const App: React.FC = () => {
         await Promise.all(combinedSelectedProjectIds.map(async (pid) => {
           const project = projects.find(p => p.id === pid);
           if (project) {
-            const list = await getSheetList(project.url);
-            list.forEach(name => {
-              const low = name.toLowerCase();
-              if ((project.category === 'hourly' && low.includes('login') && !low.includes('credential')) ||
-                  (project.category === 'production' && (low.includes('production') || low.includes('qc')))) {
-                all.push({ id: `${pid}|${name}`, label: name, projectId: pid, sheetName: name });
-              }
-            });
+            try {
+              const list = await getSheetList(project.url);
+              list.forEach(name => {
+                const low = name.toLowerCase();
+                if ((project.category === 'hourly' && low.includes('login') && !low.includes('credential')) ||
+                    (project.category === 'production' && (low.includes('production') || low.includes('qc')))) {
+                  all.push({ id: `${pid}|${name}`, label: name, projectId: pid, sheetName: name });
+                }
+              });
+            } catch (err) {}
           }
         }));
         setAvailableSheets(all);
@@ -240,32 +245,34 @@ const App: React.FC = () => {
           const project = projects.find(p => p.id === pid);
           if (project) {
             await Promise.all(sheetNames.map(async (sname) => {
-              const data = await getSheetData(project.url, sname);
-              const headers = data.length > 0 ? Object.keys(data[0]) : [];
-              let dateKey = findKey(headers, "Date") || headers[2];
-              let sheetDate = "-";
-              for (const r of data) {
-                const n = normalizeDateValue(r[dateKey]);
-                if (n && n !== "-") { sheetDate = n; break; }
-              }
-              if (sheetDate === "-") {
-                const ts = parseSheetDate(sname);
-                if (ts > 0) sheetDate = formatTimestampToDisplayDate(ts);
-              }
-              merged.push(...data.map(row => {
-                const processed: RawRow = {};
-                let rowDate = "-";
-                headers.forEach(h => {
-                  let val = row[h];
-                  if (h === dateKey || h.toLowerCase().includes('date')) {
-                    const norm = normalizeDateValue(val);
-                    if (norm && norm !== "-") { val = norm; rowDate = norm; }
-                  }
-                  processed[h] = val;
-                });
-                processed['DATE'] = rowDate === "-" ? sheetDate : rowDate;
-                return { ...processed, '__projectSource': project.name, '__projectCategory': project.category, '__sheetSource': sname };
-              }));
+              try {
+                const data = await getSheetData(project.url, sname);
+                const headers = data.length > 0 ? Object.keys(data[0]) : [];
+                let dateKey = findKey(headers, "Date") || headers[2];
+                let sheetDate = "-";
+                for (const r of data) {
+                  const n = normalizeDateValue(r[dateKey]);
+                  if (n && n !== "-") { sheetDate = n; break; }
+                }
+                if (sheetDate === "-") {
+                  const ts = parseSheetDate(sname);
+                  if (ts > 0) sheetDate = formatTimestampToDisplayDate(ts);
+                }
+                merged.push(...data.map(row => {
+                  const processed: RawRow = {};
+                  let rowDate = "-";
+                  headers.forEach(h => {
+                    let val = row[h];
+                    if (h === dateKey || h.toLowerCase().includes('date')) {
+                      const norm = normalizeDateValue(val);
+                      if (norm && norm !== "-") { val = norm; rowDate = norm; }
+                    }
+                    processed[h] = val;
+                  });
+                  processed['DATE'] = rowDate === "-" ? sheetDate : rowDate;
+                  return { ...processed, '__projectSource': project.name, '__projectCategory': project.category, '__sheetSource': sname };
+                }));
+              } catch (err) {}
             }));
           }
         }));
@@ -295,7 +302,6 @@ const App: React.FC = () => {
     setPassword('');
     setShowPassword(false);
     setLoginError('');
-    // Explicitly clear selection states
     setSelectedProdProjectIds([]);
     setSelectedHourlyProjectIds([]);
     setSelectedSheetIds([]);
@@ -380,7 +386,6 @@ const App: React.FC = () => {
         const keys = Object.keys(row);
         const sno = String(row[keys[0]] || '').trim(), name = String(row[keys[1]] || '').trim();
         
-        // Find Emp Code - checking for explicit header or index 2
         const kEmpCode = findKey(keys, "Employee Code") || findKey(keys, "Emp Code") || findKey(keys, "Emp ID") || keys[2];
         const empCode = String(row[kEmpCode] || '').trim();
 
@@ -417,7 +422,6 @@ const App: React.FC = () => {
 
     return {
       annotators: Object.entries(annotatorMap).map(([n, d]) => ({ NAME: n, FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })),
-      // Updated to remove '@rprocess.in' suffix only for UserName Summary and QC (UserName)
       users: kUser ? Object.entries(userMap).map(([n, d]) => ({ NAME: n.split('@')[0], FRAMECOUNT: d.frameSet.size, OBJECTCOUNT: d.objects })) : [],
       qcUsers: kUser ? Object.entries(qcUserMap).map(([n, d]) => ({ NAME: n.split('@')[0], OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })) : [],
       qcAnn: Object.entries(qcAnnMap).map(([n, d]) => ({ NAME: n, OBJECTCOUNT: d.objects, ERRORCOUNT: d.errors })),

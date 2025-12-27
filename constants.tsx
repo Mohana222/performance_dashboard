@@ -2,7 +2,7 @@ import React from 'react';
 
 export const API_URL = "https://script.google.com/macros/s/AKfycbyvVMYOOMsOh9L0-Q_-cWZr_I2K__45vdvI3cuAIZVQ8yt5tT-Qsf5tQ_88PmH-1G8x/exec";
 
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.1.26";
 
 export const COLORS = {
   primary: '#8B5CF6', // Violet 500
