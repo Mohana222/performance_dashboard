@@ -12,22 +12,7 @@ import SelectionModal from './components/SelectionModal';
 import UserQualityChart from './components/UserQualityChart';
 import InfoFooter from './components/InfoFooter';
 
-const SEED_PROJECTS: Project[] = [
-  {
-    id: 'dc-ramp-prod-dec-2025',
-    name: 'Production Tracker Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbyxlBcUoDH0F8o1lId-b5urjd2FXiXgkfHWlYL_zCDDLQfcDJke-mfj97B6RDF4BzsF/exec',
-    color: COLORS.primary,
-    category: 'production'
-  },
-  {
-    id: 'ramp-hourly-dec-2025',
-    name: 'Hourly Tracker_Dec 2025',
-    url: 'https://script.google.com/macros/s/AKfycbx9Y_hs5f32OXLb3pRqPzGPLMEdVDh2dLfqGIk3yFHWRh14SjaK4GKRZ_Z7ZyDG_YUc_w/exec',
-    color: COLORS.secondary,
-    category: 'hourly'
-  }
-];
+
 
 const parseTimeToMinutes = (val: any): number | null => {
   if (val === null || val === undefined) return null;
