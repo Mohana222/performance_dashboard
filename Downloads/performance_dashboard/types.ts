@@ -1,4 +1,3 @@
-
 export interface RawRow {
   [key: string]: string | number | null | undefined;
 }
@@ -6,16 +5,9 @@ export interface RawRow {
 export interface Project {
   id: string;
   name: string;
-  spreadsheetId: string;
+  url: string;
   color: string;
   category: 'production' | 'hourly';
-  customSheets?: string; // Comma separated list of sheet names
-}
-
-export interface Birthday {
-  name: string;
-  date: string; // Format: "MM-DD" (e.g., "12-25" for Dec 25th)
-  role?: string;
 }
 
 export interface SummaryData {

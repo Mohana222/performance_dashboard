@@ -1,44 +1,8 @@
-
 import React from 'react';
-import { Birthday } from './types';
 
-export const APP_VERSION = "2.3.0";
+export const API_URL = "https://script.google.com/macros/s/AKfycbxqqB8kbgsNDZ773yvx1Ey-2BHkYI-K5lNKl2hyrNcIb5unGb1EkeqDAsdECbB8TCuH/exec";
 
-// Hardcoded users for immediate login - Backend-less secure portal
-export const VALID_USERS: Record<string, string> = {
-  "admin": "admin123",
-  "desicrew": "desicrew@2025",
-  "viewer": "view_only"
-};
-
-/**
- * Birthday Data
- * Edit this list to add or remove birthdays.
- * Format: MM-DD (Month-Day)
- */
-export const BIRTHDAYS: Birthday[] = [
-  { name: "Ramu M", date: "03-06", role: "Senior Crewmate" },
-  { name: "Santhiya P", date: "06-27", role: "Junior Crewmate" },
-  { name: "Arun Kumar S", date: "01-02", role: "Annotator" }, 
-  { name: "Ishwarya R", date: "02-04", role: "Annotator" }, 
-  { name: "Surandhar D", date: "11-18", role: "Annotator" }, 
-  { name: "Mariyam Nisha R", date: "01-08", role: "Annotator" }, 
-  { name: "Sunparsuhail K", date: "04-07", role: "Annotator" }, 
-  { name: "Eswari A", date: "05-20", role: "Annotator" }, 
-  { name: "Amaravathi M", date: "03-11", role: "Annotator" }, 
-  { name: "Gayathri S", date: "09-13", role: "Annotator" }, 
-  { name: "Pavithra R", date: "03-08", role: "Annotator" }, 
-  { name: "Boomika S", date: "08-20", role: "Annotator" }, 
-  { name: "Roja V", date: "10-27", role: "Annotator" }, 
-  { name: "Priyadharshini S", date: "05-04", role: "Annotator" }, 
-  { name: "Ananthi K", date: "04-03", role: "Annotator" }, 
-  { name: "Purushothaman S", date: "06-17", role: "Annotator" }, 
-  { name: "Pavithra P", date: "07-13", role: "Annotator" }, 
-  { name: "Divya S", date: "12-04", role: "Annotator" }, 
-  { name: "Kiruthika P", date: "10-15", role: "Annotator" }, 
-  { name: "Monisha N", date: "04-22", role: "Annotator" }, 
-  { name: "Jamuna V", date: "05-15", role: "Annotator" }, 
-];
+export const APP_VERSION = "1.1.26";
 
 export const COLORS = {
   primary: '#8B5CF6', // Violet 500
@@ -82,14 +46,14 @@ export const PRIVACY_POLICY = {
     },
     {
       heading: "Data Security",
-      content: "Data is stored securely using local browser storage and fetched directly from authorized Google Sheets."
+      content: "Data is stored securely using Google Cloud infrastructure and is only accessible by authorized administrative personnel."
     }
   ]
 };
 
 export const ABOUT_INFO = {
   title: "About User Performance Dashboard",
-  purpose: "The User Performance Dashboard provides real-time visibility into complex annotation projects directly from Google Sheets without external backends.",
+  purpose: "The User Performance Dashboard is designed to provide real-time visibility into complex annotation projects.",
   audience: "This application is built for operations managers, team leads, and quality control specialists working on large-scale data labeling initiatives.",
-  problemSolved: "It eliminates the need for Apps Script maintenance by fetching data directly from public Google Sheet IDs, consolidating multiple datasets into a single analytics interface."
+  problemSolved: "It solves the challenge of consolidating data from multiple distributed spreadsheets into a single, cohesive interface for attendance tracking, quality analysis, and productivity monitoring."
 };
